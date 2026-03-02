@@ -1,0 +1,11 @@
+Model Information:
+* title:	РЖД пассажирский вагон
+* source:	https://sketchfab.com/3d-models/527c6d20f06443b2ad6d8f88bfe28e04
+* author:	mamont nikita (https://sketchfab.com/mamontnikita62)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "РЖД пассажирский вагон" (https://sketchfab.com/3d-models/527c6d20f06443b2ad6d8f88bfe28e04) by mamont nikita (https://sketchfab.com/mamontnikita62) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
