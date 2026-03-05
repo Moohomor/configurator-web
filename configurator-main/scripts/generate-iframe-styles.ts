@@ -4,25 +4,102 @@
  * Script to generate iframe styles from Vue components and CSS files.
  * This extracts all <style> blocks from Vue components and CSS files,
  * minifies them, and outputs a single string for use in iframe.ts
- * 
+ *
  * Usage: npx tsx scripts/generate-iframe-styles.ts
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, readdirSync as fsReaddirSync } from 'node:fs';
+import { resolve, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Get __dirname equivalent in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Files to extract styles from (in order)
+export interface DirEntry {
+  name: string;
+  isFile(): boolean;
+  isDirectory(): boolean;
+}
+
+/**
+ * Recursively find all files matching the given extensions
+ */
+export function findFilesRecursively(
+  dir: string,
+  extensions: string[],
+  fs: FileSystem = defaultFileSystem
+): string[] {
+  const files: string[] = [];
+  
+  try {
+    const entries = fs.readDir(dir);
+    
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      
+      if (entry.isDirectory()) {
+        // Recursively search subdirectories
+        files.push(...findFilesRecursively(fullPath, extensions, fs));
+      } else if (entry.isFile()) {
+        // Check if file has one of the target extensions
+        if (extensions.some(ext => entry.name.endsWith(ext))) {
+          files.push(fullPath);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`Warning: Could not read directory ${dir}:`, error);
+  }
+  
+  return files;
+}
+
+/**
+ * Discover all style sources automatically
+ */
+export function discoverStyleSources(srcDir: string, fs: FileSystem = defaultFileSystem): string[] {
+  const sources: string[] = [];
+  
+  // 1. Add global CSS files from styles directory
+  const stylesDir = join(srcDir, 'styles');
+  if (fs.exists(stylesDir)) {
+    const cssFiles = findFilesRecursively(stylesDir, ['.css'], fs);
+    cssFiles.forEach(file => {
+      sources.push(relative(srcDir, file));
+    });
+  }
+  
+  // 2. Add all Vue components from components directory
+  const componentsDir = join(srcDir, 'components');
+  if (fs.exists(componentsDir)) {
+    const vueFiles = findFilesRecursively(componentsDir, ['.vue'], fs);
+    vueFiles.forEach(file => {
+      sources.push(relative(srcDir, file));
+    });
+  }
+  
+  // 3. Add all Vue files from app directory
+  const appDir = join(srcDir, 'app');
+  if (fs.exists(appDir)) {
+    const vueFiles = findFilesRecursively(appDir, ['.vue'], fs);
+    vueFiles.forEach(file => {
+      sources.push(relative(srcDir, file));
+    });
+  }
+  
+  // Sort for consistent output
+  return sources.sort();
+}
+
+// Legacy: Manual list of files (kept for backward compatibility and testing)
 export const STYLE_SOURCES = [
   'styles/global.css',
   'components/BaseButton.vue',
   'components/ConfigSidebar.vue',
   'components/ModelSelector.vue',
   'components/ModelViewer.vue',
+  'components/AnimationControls.vue',
   'app/App.vue',
 ];
 
@@ -76,12 +153,14 @@ export interface FileSystem {
   readFile: (path: string) => string;
   writeFile: (path: string, content: string) => void;
   exists: (path: string) => boolean;
+  readDir: (path: string) => DirEntry[];
 }
 
 const defaultFileSystem: FileSystem = {
   readFile: (p) => readFileSync(p, 'utf-8'),
   writeFile: (p, c) => writeFileSync(p, c, 'utf-8'),
   exists: existsSync,
+  readDir: (p) => fsReaddirSync(p, { withFileTypes: true }) as DirEntry[],
 };
 
 /**
@@ -89,12 +168,16 @@ const defaultFileSystem: FileSystem = {
  */
 export function generateStyles(
   srcDir: string,
-  sources: string[] = STYLE_SOURCES,
+  sources?: string[],
   fs: FileSystem = defaultFileSystem
 ): string {
+  // Auto-discover sources if not provided
+  const resolvedSources = sources || discoverStyleSources(srcDir, fs);
+  
+  console.log(`Processing ${resolvedSources.length} source files...`);
   const allStyles: string[] = [];
   
-  for (const source of sources) {
+  for (const source of resolvedSources) {
     const filePath = join(srcDir, source);
     
     if (!fs.exists(filePath)) {
@@ -150,9 +233,10 @@ export function main(
   const resolvedSrcDir = srcDir || resolve(__dirname, '../src');
   const resolvedOutputFile = outputFile || resolve(__dirname, '../src/helpers/iframe-styles.generated.ts');
   
-  console.log('Generating iframe styles...');
+  console.log('Generating iframe styles (auto-discovery mode)...');
   
-  const rawStyles = generateStyles(resolvedSrcDir, STYLE_SOURCES, fs);
+  // Use auto-discovery by passing undefined for sources
+  const rawStyles = generateStyles(resolvedSrcDir, undefined, fs);
   const minifiedStyles = minifyCSS(rawStyles);
   const output = generateOutputContent(minifiedStyles);
   
