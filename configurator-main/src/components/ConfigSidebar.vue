@@ -2,9 +2,9 @@
   <div class="configurator-sidebar">
     <div class="sidebar-header">
       <h2>Конфигуратор</h2>
-      <button class="back-button" @click="$emit('back')">
+      <BaseButton variant="secondary" @click="$emit('back')">
         ← Назад к выбору
-      </button>
+      </BaseButton>
     </div>
 
     <div class="sidebar-section" v-if="texturePacks && texturePacks.length > 0">
@@ -23,7 +23,27 @@
     </div>
 
     <div class="sidebar-section">
-      <h3>Детали модели</h3>
+      <div class="section-header">
+        <h3>Детали модели</h3>
+        <BaseButton
+          v-if="hasHiddenParts"
+          variant="primary"
+          small
+          @click="$emit('showAll')"
+          title="Показать все детали"
+        >
+          Показать все
+        </BaseButton>
+        <BaseButton
+          v-else
+          variant="danger"
+          small
+          @click="$emit('hideAll')"
+          title="Скрыть все детали"
+        >
+          Скрыть все
+        </BaseButton>
+      </div>
 
       <!-- Описание выбранной детали -->
       <div v-if="selectedPart" class="part-description">
@@ -42,24 +62,39 @@
           v-for="part in parts"
           :key="part.name"
           class="part-item"
-          :class="{ selected: selectedPart?.name === part.name }"
-          @click="$emit('selectPart', part)"
+          :class="{
+            selected: selectedPart?.name === part.name,
+            hidden: part.visible === false
+          }"
         >
-          <div class="part-info">
+          <div class="part-info" @click="$emit('selectPart', part)">
             <span class="part-name">{{ part.name }}</span>
             <span class="part-material">{{ part.materialName }}</span>
           </div>
+          
+          <BaseButton
+            :variant="part.visible === false ? 'primary' : 'danger'"
+            small
+            @click.stop="$emit('toggleVisibility', part)"
+            :title="part.visible === false ? 'Показать деталь' : 'Скрыть деталь'"
+          >
+            {{ part.visible === false ? 'Показать' : 'Скрыть' }}
+          </BaseButton>
         </div>
       </div>
     </div>
 
     <div class="sidebar-footer">
-      <button class="reset-button" @click="$emit('reset')">Сбросить всё</button>
+      <BaseButton variant="danger" @click="$emit('reset')">
+        Сбросить всё
+      </BaseButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import BaseButton from "./BaseButton.vue";
 import type { ModelPart, TexturePack } from "../types/models";
 
 interface Props {
@@ -69,11 +104,18 @@ interface Props {
   selectedTexturePack: TexturePack | null;
 }
 
-defineProps<Props>();
+const props = defineProps<Props>();
+
+const hasHiddenParts = computed(() => {
+  return props.parts.some(part => part.visible === false);
+});
 
 defineEmits<{
   selectPart: [part: ModelPart];
   selectTexturePack: [pack: TexturePack];
+  toggleVisibility: [part: ModelPart];
+  hideAll: [];
+  showAll: [];
   back: [];
   reset: [];
 }>();
@@ -101,31 +143,28 @@ defineEmits<{
   color: #333;
 }
 
-.back-button {
-  background: #f5f5f5;
-  border: 1px solid #ddd;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.back-button:hover {
-  background: #e8e8e8;
-}
 
 .sidebar-section {
   padding: 20px;
   border-bottom: 1px solid #e0e0e0;
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 12px;
+}
+
 .sidebar-section h3 {
-  margin: 0 0 15px 0;
+  margin: 0;
   font-size: 16px;
   color: #555;
   font-weight: 600;
+  flex: 1;
 }
+
 
 .color-selector {
   display: flex;
@@ -175,8 +214,8 @@ defineEmits<{
   padding: 12px;
   border: 1px solid #e0e0e0;
   border-radius: 6px;
-  cursor: pointer;
   transition: all 0.2s;
+  gap: 8px;
 }
 
 .part-item:hover {
@@ -189,11 +228,20 @@ defineEmits<{
   background: #f0f7ff;
 }
 
+.part-item.hidden {
+  opacity: 0.5;
+}
+
+.part-item.hidden:hover {
+  opacity: 0.7;
+}
+
 .part-info {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  cursor: pointer;
 }
 
 .part-name {
@@ -205,6 +253,60 @@ defineEmits<{
 .part-material {
   font-size: 12px;
   color: #888;
+}
+
+.visibility-toggle {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.visibility-toggle:hover {
+  background: #f0f7ff;
+  border-color: #4a90e2;
+  transform: scale(1.1);
+}
+
+.visibility-toggle:active {
+  transform: scale(0.95);
+}
+
+.visibility-toggle.hidden {
+  background: #fff5f5;
+  border-color: #ffcdd2;
+}
+
+.visibility-toggle.hidden:hover {
+  background: #ffebee;
+  border-color: #ef5350;
+}
+
+.eye-icon {
+  font-size: 20px;
+  color: #333;
+  transition: color 0.2s;
+  user-select: none;
+}
+
+.visibility-toggle.hidden .eye-icon {
+  color: #999;
+}
+
+.visibility-toggle:hover .eye-icon {
+  color: #4a90e2;
+}
+
+.visibility-toggle.hidden:hover .eye-icon {
+  color: #ef5350;
 }
 
 .color-apply-button {
@@ -232,21 +334,8 @@ defineEmits<{
   margin-top: auto;
 }
 
-.reset-button {
+.sidebar-footer .base-button {
   width: 100%;
-  background: #f44336;
-  color: white;
-  border: none;
-  padding: 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.reset-button:hover {
-  background: #d32f2f;
 }
 
 .part-description {

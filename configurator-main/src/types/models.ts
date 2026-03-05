@@ -18,6 +18,7 @@ export interface ModelPart {
   mesh?: any; // THREE.Mesh
   description?: string; // Описание детали
   metadata?: Record<string, any>; // Дополнительные данные
+  visible?: boolean; // Видимость детали
 }
 
 export interface ConfiguratorState {

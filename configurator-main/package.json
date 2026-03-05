@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "vue-tsc -b && vite build"
+    "prebuild": "npm run generate:styles",
+    "build": "vue-tsc -b && vite build",
+    "generate:styles": "npx tsx scripts/generate-iframe-styles.ts",
+    "test:scripts": "npx tsx scripts/generate-iframe-styles.test.ts"
   },
   "dependencies": {
     "three": "^0.170.0",

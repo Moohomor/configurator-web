@@ -13,6 +13,11 @@ interface Props {
   modelPath: string;
   selectedPart: ModelPart | null;
   selectedTexturePack: TexturePack | null;
+  visibleParts: Set<string>;
+  isAnimationPlaying?: boolean;
+  animationTime?: number;
+  animationSpeed?: number;
+  animationLoop?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -20,6 +25,8 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   partsLoaded: [parts: ModelPart[]];
   partClick: [part: ModelPart];
+  animationsLoaded: [hasAnimations: boolean, duration: number];
+  animationTimeUpdate: [time: number];
 }>();
 
 const containerRef = ref<HTMLDivElement>();
@@ -32,9 +39,16 @@ let raycaster: THREE.Raycaster;
 let mouse: THREE.Vector2;
 let animationId: number;
 
+// Переменные для анимации
+let mixer: THREE.AnimationMixer | null = null;
+let animations: THREE.AnimationClip[] = [];
+let currentAction: THREE.AnimationAction | null = null;
+let clock: THREE.Clock;
+
 const parts: ModelPart[] = [];
 
 onMounted(() => {
+  clock = new THREE.Clock();
   initScene();
   loadModel();
   animate();
@@ -46,6 +60,9 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", onWindowResize);
   containerRef.value?.removeEventListener("click", onCanvasClick);
   cancelAnimationFrame(animationId);
+  if (mixer) {
+    mixer.stopAllAction();
+  }
   renderer.dispose();
   controls.dispose();
 });
@@ -62,6 +79,59 @@ watch(
   (newPack) => {
     if (newPack) {
       applyTexturePack(newPack);
+    }
+  }
+);
+
+watch(
+  () => props.visibleParts,
+  (visibleParts) => {
+    updatePartsVisibility(visibleParts);
+  },
+  { deep: true }
+);
+
+// Отслеживание изменений параметров анимации
+// Управление воспроизведением/паузой анимации
+watch(
+  () => props.isAnimationPlaying,
+  (isPlaying) => {
+    if (currentAction) {
+      if (isPlaying) {
+        currentAction.paused = false;
+      } else {
+        currentAction.paused = true;
+      }
+    }
+  }
+);
+
+// Перемотка анимации на указанное время
+watch(
+  () => props.animationTime,
+  (time) => {
+    if (mixer && currentAction && time !== undefined) {
+      mixer.setTime(time);
+    }
+  }
+);
+
+// Изменение скорости воспроизведения анимации
+watch(
+  () => props.animationSpeed,
+  (speed) => {
+    if (currentAction && speed !== undefined) {
+      currentAction.timeScale = speed;
+    }
+  }
+);
+
+// Изменение режима повтора анимации
+watch(
+  () => props.animationLoop,
+  (loop) => {
+    if (currentAction) {
+      currentAction.loop = loop ? THREE.LoopRepeat : THREE.LoopOnce;
     }
   }
 );
@@ -146,6 +216,9 @@ function loadModel() {
 
           // Добавить свойство для хранения оригинального материала
           (child as any).originalMaterial = child.material.clone();
+          
+          // Инициализировать видимость
+          part.visible = true;
         }
       });
 
@@ -155,6 +228,25 @@ function loadModel() {
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
       model.position.sub(center);
+
+      // Обработка анимаций из загруженной модели
+      if (gltf.animations && gltf.animations.length > 0) {
+        animations = gltf.animations;
+        mixer = new THREE.AnimationMixer(model);
+        
+        // Запустить первую анимацию из списка
+        currentAction = mixer.clipAction(animations[0]!);
+        currentAction.loop = THREE.LoopRepeat;  // Режим повтора по умолчанию
+        currentAction.play();
+        currentAction.paused = true; // Начинаем с паузы
+        
+        const duration = animations[0]!.duration;
+        emit("animationsLoaded", true, duration);
+        console.log("Анимации загружены:", animations.length, "Длительность:", duration);
+      } else {
+        emit("animationsLoaded", false, 0);
+        console.log("Анимации не найдены");
+      }
 
       emit("partsLoaded", parts);
       console.log("Модель загружена успешно, деталей:", parts.length);
@@ -170,6 +262,18 @@ function loadModel() {
 
 function animate() {
   animationId = requestAnimationFrame(animate);
+  
+  // Обновление анимации при воспроизведении
+  if (mixer && props.isAnimationPlaying) {
+    const delta = clock.getDelta();
+    mixer.update(delta);
+    
+    // Отправить текущее время анимации родительскому компоненту
+    if (currentAction) {
+      emit("animationTimeUpdate", currentAction.time);
+    }
+  }
+  
   controls.update();
   renderer.render(scene, camera);
 }
@@ -288,6 +392,16 @@ function applyTexturePack(pack: TexturePack) {
           );
         }
       );
+    }
+  });
+}
+
+function updatePartsVisibility(visibleParts: Set<string>) {
+  parts.forEach((part) => {
+    if (part.mesh) {
+      const shouldBeVisible = visibleParts.has(part.name);
+      part.mesh.visible = shouldBeVisible;
+      part.visible = shouldBeVisible;
     }
   });
 }
