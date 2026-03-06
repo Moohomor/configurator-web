@@ -12,11 +12,14 @@
     id: "reductor",
     name: "Редуктор",
     path: "/models/reductor/Редуктор_червячный_Ч_100_АНИМАЦИЯ_рабочий_вариант.glb",
-    texturePacks: [
-      { id: "blue", name: "Синий", path: "/models/reductor/text/blue" },
-      { id: "red", name: "Красный", path: "/models/reductor/text/red" },
-    ],
-  }
+    texturePacks: [],
+  },
+  {
+    id: "sa-3",
+    name: "Автосцепка СА-3",
+    path: "/models/sa-3/scene.glb",
+    texturePacks: [],
+  },
 ];
 
 export default models;
