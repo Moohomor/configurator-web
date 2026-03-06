@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    # Работают на всех ветках
+  pull_request:
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            configurator-main/package-lock.json
+            example-main/package-lock.json
+      
+      - name: Install configurator dependencies
+        working-directory: ./configurator-main
+        run: npm ci
+      
+      - name: Run Jest tests
+        working-directory: ./configurator-main
+        run: npm test
+      
+      - name: Generate test coverage
+        working-directory: ./configurator-main
+        run: npm run test:coverage
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./configurator-main/coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+        continue-on-error: true
+      
+      - name: Type check configurator
+        working-directory: ./configurator-main
+        run: npx vue-tsc --noEmit
+      
+      - name: Build configurator library
+        working-directory: ./configurator-main
+        run: npm run build
+      
+      - name: Install example dependencies
+        working-directory: ./example-main
+        run: npm ci
+      
+      - name: Build example application
+        working-directory: ./example-main
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            configurator-main/dist
+            example-main/dist
+          retention-days: 7
