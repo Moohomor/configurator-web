@@ -21,26 +21,33 @@ npm -v
 Запускать из корня репозитория:
 
 ```bash
-cd configurator-main
-npm i
-npm run build
-cd ../example-main
-npm i
+npm run install:all
+npm run build:configurator
 ```
 
 ## Запуск в режиме разработки
 
 ```bash
-cd example-main
 npm run dev
+```
+
+Если в configurator-main не было изменений и вообще нужно только поднять пример приложения:
+
+```bash
+npm run dev:nobuild
 ```
 
 ## Production-сборка
 
 ```bash
-cd example-main
 npm run build
 npm run preview
+```
+
+Или одной командой:
+
+```bash
+npm run build:preview
 ```
 
 Альтернатива: раздать папку `dist` через любой статический сервер (например, ```python -m http.server 3000 -d dist``` или ```npx --yes serve -s dist```).
@@ -95,11 +102,8 @@ npm run test:coverage
 Решение:
 
 ```bash
-cd configurator-main
-npm install
-npm run build
-cd ../example-main
-npm install
+npm run install:all
+npm run build:configurator
 ```
 
 ### 2) Ошибка импорта `@univer/configurator`
@@ -109,8 +113,7 @@ npm install
 Решение:
 
 ```bash
-cd configurator-main
-npm run build
+npm run build:configurator
 ```
 
 ### 3) Конфликты зависимостей после обновлений
@@ -121,10 +124,7 @@ npm run build
 
 ```bash
 npx --yes rimraf "configurator-main/node_modules" "configurator-main/package-lock.json" "example-main/node_modules" "example-main/package-lock.json"
-cd configurator-main
-npm install
-cd ../example-main
-npm install
+npm run install:all
 ```
 
 ### 4) `EADDRINUSE` (порт занят)
@@ -134,6 +134,5 @@ npm install
 Решение:
 
 ```bash
-cd example-main
-npm run dev -- --port 5174
+npm --prefix ./example-main run dev -- --port 5174
 ```

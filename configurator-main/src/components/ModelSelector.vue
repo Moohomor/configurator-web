@@ -1,9 +1,24 @@
 <template>
   <div class="configurator-model-selector">
     <h2>Выберите модель</h2>
-    <div class="models-grid">
+
+    <div class="category-tabs" role="tablist" aria-label="Категории моделей">
+      <button
+        v-for="tab in categoryTabs"
+        :key="tab.id"
+        type="button"
+        class="category-tab"
+        :class="{ active: tab.id === activeCategory }"
+        :aria-selected="tab.id === activeCategory"
+        @click="activeCategory = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div v-if="filteredModels.length" class="models-grid">
       <div
-        v-for="model in models"
+        v-for="model in filteredModels"
         :key="model.id"
         class="model-card"
         @click="$emit('select', model)"
@@ -15,26 +30,49 @@
         <h3>{{ model.name }}</h3>
       </div>
     </div>
+
+    <p v-else class="empty-state">В этой вкладке пока нет моделей.</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { Model } from "../types/models";
+import { computed, ref } from "vue";
+import type { Model, ModelCategory } from "../types/models";
 
 interface Props {
   models: Model[];
 }
 
-defineProps<Props>();
+const props = defineProps<Props>();
 
 defineEmits<{
   select: [model: Model];
 }>();
+
+const categoryTabs: Array<{ id: ModelCategory; label: string }> = [
+  { id: "locomotives", label: "Локомотивы" },
+  { id: "metro-cars", label: "Вагоны метро" },
+  { id: "electric-and-diesel-trains", label: "Электропоезда и дизель-поезда" },
+  { id: "passenger-cars", label: "Пассажирские вагоны" },
+  { id: "special-cars", label: "Специальные вагоны" },
+];
+
+const activeCategory = ref<ModelCategory>("locomotives");
+
+const filteredModels = computed(() =>
+  props.models.filter((model) => {
+    if (model.category) {
+      return model.category === activeCategory.value;
+    }
+
+    return activeCategory.value === "special-cars";
+  })
+);
 </script>
 
 <style>
 .configurator-model-selector {
-  max-width: 800px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 40px 20px;
 }
@@ -44,6 +82,38 @@ defineEmits<{
   margin-bottom: 30px;
   color: #333;
   font-size: 28px;
+}
+
+.configurator-model-selector .category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.configurator-model-selector .category-tab {
+  border: 1px solid #d0d7de;
+  background: #fff;
+  color: #444;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.configurator-model-selector .category-tab:hover {
+  border-color: #4a90e2;
+  color: #4a90e2;
+}
+
+.configurator-model-selector .category-tab.active {
+  background: #4a90e2;
+  border-color: #4a90e2;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(74, 144, 226, 0.24);
 }
 
 .configurator-model-selector .models-grid {
@@ -95,5 +165,11 @@ defineEmits<{
   color: #555;
   font-size: 18px;
 }
-</style>
 
+.configurator-model-selector .empty-state {
+  text-align: center;
+  margin: 40px 0 0;
+  color: #6b7280;
+  font-size: 16px;
+}
+</style>

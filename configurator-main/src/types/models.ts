@@ -1,7 +1,15 @@
+export type ModelCategory =
+  | "locomotives"
+  | "metro-cars"
+  | "electric-and-diesel-trains"
+  | "passenger-cars"
+  | "special-cars";
+
 export interface Model {
   id: string;
   name: string;
   path: string;
+  category?: ModelCategory;
   preview?: string;
   texturePacks?: TexturePack[]; // Текстур-паки для этой модели
 }

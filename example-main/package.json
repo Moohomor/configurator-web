@@ -12,6 +12,7 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
-    "@univer/configurator": "file:../configurator-main"
+    "@univer/configurator": "file:../configurator-main",
+    "configurator-web": "file:.."
   }
 }

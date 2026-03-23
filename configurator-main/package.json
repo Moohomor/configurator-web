@@ -13,6 +13,7 @@
     "test:scripts": "npm test"
   },
   "dependencies": {
+    "configurator-web": "file:..",
     "three": "^0.170.0",
     "vue": "^3.5.24"
   },
@@ -20,7 +21,9 @@
     ".": "./dist/configurator.js"
   },
   "main": "./dist/configurator.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@types/jest": "^29.5.0",
