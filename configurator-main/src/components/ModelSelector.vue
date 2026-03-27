@@ -6,22 +6,36 @@
       <button
         v-for="tab in categoryTabs"
         :key="tab.id"
+        :id="`tab-${tab.id}`"
         type="button"
+        role="tab"
         class="category-tab"
         :class="{ active: tab.id === activeCategory }"
         :aria-selected="tab.id === activeCategory"
+        aria-controls="models-panel"
         @click="activeCategory = tab.id"
       >
         {{ tab.label }}
       </button>
     </div>
 
-    <div v-if="filteredModels.length" class="models-grid">
+    <div
+      v-if="filteredModels.length"
+      id="models-panel"
+      class="models-grid"
+      role="tabpanel"
+      :aria-labelledby="`tab-${activeCategory}`"
+    >
       <div
         v-for="model in filteredModels"
         :key="model.id"
         class="model-card"
+        role="button"
+        tabindex="0"
+        :aria-label="`Выбрать модель ${model.name}`"
         @click="$emit('select', model)"
+        @keydown.enter.prevent="$emit('select', model)"
+        @keydown.space.prevent="$emit('select', model)"
       >
         <div class="model-preview">
           <img v-if="model.preview" :src="model.preview" :alt="model.name" />
@@ -171,5 +185,55 @@ const filteredModels = computed(() =>
   margin: 40px 0 0;
   color: #6b7280;
   font-size: 16px;
+}
+
+.configurator-model-selector .model-card:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .configurator-model-selector {
+    padding: 24px 16px;
+    overflow-y: auto;
+    max-height: 100vh;
+  }
+
+  .configurator-model-selector h2 {
+    font-size: 22px;
+    margin-bottom: 20px;
+  }
+
+  .configurator-model-selector .category-tabs {
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .configurator-model-selector .category-tab {
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .configurator-model-selector .models-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+  }
+
+  .configurator-model-selector .model-card {
+    padding: 14px;
+  }
+
+  .configurator-model-selector .model-preview {
+    height: 120px;
+  }
+
+  .configurator-model-selector .preview-placeholder {
+    font-size: 48px;
+  }
+
+  .configurator-model-selector h3 {
+    font-size: 15px;
+  }
 }
 </style>

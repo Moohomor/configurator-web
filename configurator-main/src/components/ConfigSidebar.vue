@@ -1,5 +1,5 @@
 <template>
-  <div class="configurator-sidebar">
+  <div id="configurator-sidebar" class="configurator-sidebar">
     <div class="sidebar-header">
       <h2>Конфигуратор</h2>
       <BaseButton variant="secondary" @click="$emit('back')">
@@ -15,7 +15,12 @@
           :key="pack.id"
           class="texture-pack-item"
           :class="{ active: selectedTexturePack?.id === pack.id }"
+          role="button"
+          tabindex="0"
+          :aria-pressed="selectedTexturePack?.id === pack.id"
           @click="$emit('selectTexturePack', pack)"
+          @keydown.enter.prevent="$emit('selectTexturePack', pack)"
+          @keydown.space.prevent="$emit('selectTexturePack', pack)"
         >
           <span class="pack-name">{{ pack.name }}</span>
         </div>
@@ -64,19 +69,29 @@
           class="part-item"
           :class="{
             selected: selectedPart?.name === part.name,
-            hidden: part.visible === false
+            hidden: part.visible === false,
           }"
         >
-          <div class="part-info" @click="$emit('selectPart', part)">
+          <div
+            class="part-info"
+            role="button"
+            tabindex="0"
+            :aria-label="`Выбрать деталь ${part.name}`"
+            @click="$emit('selectPart', part)"
+            @keydown.enter.prevent="$emit('selectPart', part)"
+            @keydown.space.prevent="$emit('selectPart', part)"
+          >
             <span class="part-name">{{ part.name }}</span>
             <span class="part-material">{{ part.materialName }}</span>
           </div>
-          
+
           <BaseButton
             :variant="part.visible === false ? 'primary' : 'danger'"
             small
             @click.stop="$emit('toggleVisibility', part)"
-            :title="part.visible === false ? 'Показать деталь' : 'Скрыть деталь'"
+            :title="
+              part.visible === false ? 'Показать деталь' : 'Скрыть деталь'
+            "
           >
             {{ part.visible === false ? 'Показать' : 'Скрыть' }}
           </BaseButton>
@@ -93,9 +108,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import BaseButton from "./BaseButton.vue";
-import type { ModelPart, TexturePack } from "../types/models";
+import { computed } from 'vue';
+import type { ModelPart, TexturePack } from '../types/models';
+import BaseButton from './BaseButton.vue';
 
 interface Props {
   parts: ModelPart[];
@@ -107,7 +122,7 @@ interface Props {
 const props = defineProps<Props>();
 
 const hasHiddenParts = computed(() => {
-  return props.parts.some(part => part.visible === false);
+  return props.parts.some((part) => part.visible === false);
 });
 
 defineEmits<{
@@ -143,7 +158,6 @@ defineEmits<{
   color: #333;
 }
 
-
 .sidebar-section {
   padding: 20px;
   border-bottom: 1px solid #e0e0e0;
@@ -164,7 +178,6 @@ defineEmits<{
   font-weight: 600;
   flex: 1;
 }
-
 
 .color-selector {
   display: flex;
@@ -234,6 +247,12 @@ defineEmits<{
 
 .part-item.hidden:hover {
   opacity: 0.7;
+}
+
+.part-info:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .part-info {
@@ -394,6 +413,11 @@ defineEmits<{
   background: #f0f7ff;
 }
 
+.texture-pack-item:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 2px;
+}
+
 .texture-pack-item.active {
   border-color: #4a90e2;
   background: #4a90e2;
@@ -407,5 +431,44 @@ defineEmits<{
 .pack-name {
   font-size: 14px;
   color: #333;
+}
+
+/* Мобильные стили */
+@media (max-width: 768px) {
+  .configurator-sidebar {
+    width: 320px;
+    max-height: 100%;
+  }
+
+  .sidebar-header h2 {
+    font-size: 20px;
+  }
+
+  .texture-pack-item {
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+  }
+
+  .pack-name {
+    font-size: 15px;
+  }
+
+  .part-item {
+    padding: 14px 12px;
+    gap: 10px;
+  }
+
+  .part-name {
+    font-size: 15px;
+  }
+
+  .part-material {
+    font-size: 13px;
+  }
+
+  .parts-list {
+    max-height: none;
+  }
 }
 </style>

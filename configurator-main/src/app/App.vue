@@ -9,18 +9,74 @@
 
     <!-- Экран конфигуратора -->
     <div v-else class="configurator">
-      <ConfigSidebar
-        :parts="state.parts"
-        :texture-packs="state.selectedModel?.texturePacks"
-        :selected-part="state.selectedPart"
-        :selected-texture-pack="state.selectedTexturePack"
-        @select-part="selectPart"
-        @select-texture-pack="selectTexturePack"
-        @toggle-visibility="togglePartVisibility"
-        @hide-all="hideAllParts"
-        @show-all="showAllParts"
-        @back="goBack"
-        @reset="resetConfiguration"
+      <!-- Шторка сайдбара -->
+      <div
+        class="sidebar-drawer"
+        :class="{ 'sidebar-drawer--open': sidebarOpen }"
+      >
+        <ConfigSidebar
+          :parts="state.parts"
+          :texture-packs="state.selectedModel?.texturePacks"
+          :selected-part="state.selectedPart"
+          :selected-texture-pack="state.selectedTexturePack"
+          @select-part="selectPart"
+          @select-texture-pack="selectTexturePack"
+          @toggle-visibility="togglePartVisibility"
+          @hide-all="hideAllParts"
+          @show-all="showAllParts"
+          @back="goBack"
+          @reset="resetConfiguration"
+        />
+
+        <!-- Кнопка-закладка-->
+        <button
+          class="sidebar-tab"
+          @click="toggleSidebar"
+          :aria-label="
+            sidebarOpen
+              ? 'Закрыть панель конфигуратора'
+              : 'Открыть панель конфигуратора'
+          "
+          :aria-expanded="sidebarOpen"
+          aria-controls="configurator-sidebar"
+        >
+          <!-- Крестик -->
+          <svg
+            v-if="sidebarOpen"
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+            />
+          </svg>
+          <!-- Бургер меню когда закрыто -->
+          <svg
+            v-else
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Тёмный оверлей -->
+      <div
+        v-if="sidebarOpen"
+        class="mobile-overlay"
+        @click="closeSidebar"
+        aria-hidden="true"
       />
 
       <div class="viewer-wrapper">
@@ -38,9 +94,30 @@
           @animations-loaded="onAnimationsLoaded"
           @animation-time-update="onAnimationTimeUpdate"
         />
-        
+
         <!-- Контролы анимации -->
-        <div class="animation-controls-wrapper">
+        <div
+          class="animation-controls-wrapper"
+          :class="{ 'animation-controls-wrapper--open': animControlsOpen }"
+        >
+          <!-- Кнопка-ручка -->
+          <button
+            v-if="animationState.hasAnimations"
+            class="animation-tab"
+            @click="toggleAnimControls"
+            :aria-label="
+              animControlsOpen
+                ? 'Скрыть управление анимацией'
+                : 'Показать управление анимацией'
+            "
+            :aria-expanded="animControlsOpen"
+          >
+            <span class="animation-tab-handle" aria-hidden="true"></span>
+            <span class="animation-tab-label">{{
+              animControlsOpen ? '▼ Анимация' : '▲ Анимация'
+            }}</span>
+          </button>
+
           <AnimationControls
             :has-animations="animationState.hasAnimations"
             :is-playing="animationState.isPlaying"
@@ -56,23 +133,22 @@
           />
         </div>
       </div>
-
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, onMounted, computed } from "vue";
-import ModelSelector from "../components/ModelSelector.vue";
-import ModelViewer from "../components/ModelViewer.vue";
-import ConfigSidebar from "../components/ConfigSidebar.vue";
-import AnimationControls from "../components/AnimationControls.vue";
+import { computed, onMounted, reactive, ref } from 'vue';
+import AnimationControls from '../components/AnimationControls.vue';
+import ConfigSidebar from '../components/ConfigSidebar.vue';
+import ModelSelector from '../components/ModelSelector.vue';
+import ModelViewer from '../components/ModelViewer.vue';
 import type {
+  ConfiguratorState,
   Model,
   ModelPart,
-  ConfiguratorState,
   TexturePack,
-} from "../types/models";
+} from '../types/models';
 
 const models = reactive<Model[]>([]);
 
@@ -82,6 +158,22 @@ const state = reactive<ConfiguratorState>({
   parts: [],
   selectedTexturePack: null,
 });
+
+// Состояние мобильных панелей
+const sidebarOpen = ref(false);
+const animControlsOpen = ref(false);
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value;
+}
+
+function closeSidebar() {
+  sidebarOpen.value = false;
+}
+
+function toggleAnimControls() {
+  animControlsOpen.value = !animControlsOpen.value;
+}
 
 // Состояние анимации
 const animationState = reactive({
@@ -96,19 +188,15 @@ const animationState = reactive({
 
 const visiblePartsSet = computed(() => {
   const visibleSet = new Set<string>();
-  
-  // Показываем части согласно их флагу visible
-  state.parts.forEach(part => {
+  state.parts.forEach((part) => {
     if (part.visible !== false) {
       visibleSet.add(part.name);
     }
   });
-  
   return visibleSet;
 });
 
 onMounted(async () => {
-  // Загрузить список моделей
   const loadedModels = await window.configuratorAPI.loadModels();
   models.push(...loadedModels);
 });
@@ -118,10 +206,12 @@ function selectModel(model: Model) {
   state.parts = [];
   state.selectedPart = null;
   state.selectedTexturePack = null;
+  sidebarOpen.value = false;
+  animControlsOpen.value = false;
 }
 
 function onPartsLoaded(parts: ModelPart[]) {
-  state.parts = parts.map(part => ({
+  state.parts = parts.map((part) => ({
     ...part,
     visible: true,
   }));
@@ -147,26 +237,25 @@ function resetConfiguration() {
   state.selectedTexturePack = null;
 }
 
-// Фунции для управления видимостью деталей
 function togglePartVisibility(part: ModelPart) {
-  const index = state.parts.findIndex(p => p.name === part.name);
+  const index = state.parts.findIndex((p) => p.name === part.name);
   if (index !== -1 && state.parts[index]) {
     state.parts[index]!.visible = !state.parts[index]!.visible;
   }
 }
+
 function hideAllParts() {
-  state.parts.forEach(part => {
+  state.parts.forEach((part) => {
     part.visible = false;
   });
 }
 
 function showAllParts() {
-  state.parts.forEach(part => {
+  state.parts.forEach((part) => {
     part.visible = true;
   });
 }
 
-// Функции управления анимацией
 function onAnimationsLoaded(hasAnimations: boolean, duration: number) {
   animationState.hasAnimations = hasAnimations;
   animationState.duration = duration;
@@ -176,7 +265,7 @@ function onAnimationsLoaded(hasAnimations: boolean, duration: number) {
 
 function onAnimationTimeUpdate(time: number) {
   animationState.currentTime = time;
-  animationState.seekTime = undefined; // Сбросить после применения
+  animationState.seekTime = undefined;
 }
 
 function playAnimation() {
@@ -199,7 +288,6 @@ function changeAnimationSpeed(speed: number) {
 function changeAnimationLoop(loop: boolean) {
   animationState.loop = loop;
 }
-
 </script>
 
 <style scoped>
@@ -207,14 +295,40 @@ function changeAnimationLoop(loop: boolean) {
   width: 100%;
   height: 100vh;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
+    Cantarell, sans-serif;
 }
 
 .configurator {
   display: flex;
   width: 100%;
   height: 100%;
+  position: relative;
+}
+
+/* Обёртка сайдбара */
+.sidebar-drawer {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+}
+
+/* Закладка скрыта */
+.sidebar-tab {
+  display: none;
+}
+
+/* Оверлей скрыт */
+.mobile-overlay {
+  display: none;
+}
+
+/* Кнопка-ручка анимации */
+.animation-tab {
+  display: none;
 }
 
 .viewer-wrapper {
@@ -224,6 +338,7 @@ function changeAnimationLoop(loop: boolean) {
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .animation-controls-wrapper {
@@ -234,5 +349,126 @@ function changeAnimationLoop(loop: boolean) {
   z-index: 10;
   min-width: 400px;
   max-width: 600px;
+}
+
+/* ========================================================
+   Мобильные стили (≤ 768px)
+   ======================================================== */
+@media (max-width: 768px) {
+  /* Сайдбар */
+  .sidebar-drawer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    transform: translateX(-320px);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .sidebar-drawer--open {
+    transform: translateX(0);
+  }
+
+  /* Кнопка-закладка */
+  .sidebar-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 44px;
+    min-height: 72px;
+    align-self: center;
+    background: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 0 12px 12px 0;
+    cursor: pointer;
+    box-shadow: 3px 2px 10px rgba(0, 0, 0, 0.25);
+    padding: 10px 0;
+    touch-action: manipulation;
+  }
+
+  .sidebar-tab:focus-visible {
+    outline: 3px solid #ffd600;
+    outline-offset: 2px;
+  }
+
+  /* Тёмный оверлей */
+  .mobile-overlay {
+    display: block;
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 99;
+    cursor: pointer;
+    backdrop-filter: blur(1px);
+  }
+
+  .viewer-wrapper {
+    width: 100%;
+    flex: 1;
+  }
+
+  /* Контролы анимации */
+  .animation-controls-wrapper {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    /* По умолчанию торчит только ручка (52px) снизу */
+    transform: translateY(calc(100% - 52px));
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: unset;
+    max-width: unset;
+    background: white;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.18);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .animation-controls-wrapper--open {
+    transform: translateY(0);
+  }
+
+  /* Ручка-закладка для анимации */
+  .animation-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #e0e0e0;
+    cursor: pointer;
+    touch-action: manipulation;
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  .animation-tab:focus-visible {
+    outline: 3px solid #ffd600;
+    outline-offset: -3px;
+  }
+
+  .animation-tab-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    background: #ccc;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .animation-tab-label {
+    font-size: 14px;
+    color: #555;
+    font-weight: 600;
+  }
 }
 </style>
