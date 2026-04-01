@@ -3,19 +3,20 @@
     <div class="controls-header">
       <h3>Анимация</h3>
     </div>
-    
+
     <div class="controls-body">
       <!-- Play/Pause Button -->
-      <button 
+      <button
         class="play-pause-btn"
         @click="togglePlayPause"
+        :aria-label="isPlaying ? 'Пауза' : 'Воспроизвести'"
         :title="isPlaying ? 'Пауза' : 'Воспроизвести'"
       >
         <svg v-if="!isPlaying" viewBox="0 0 24 24" width="24" height="24">
-          <path fill="currentColor" d="M8 5v14l11-7z"/>
+          <path fill="currentColor" d="M8 5v14l11-7z" />
         </svg>
         <svg v-else viewBox="0 0 24 24" width="24" height="24">
-          <path fill="currentColor" d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+          <path fill="currentColor" d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
         </svg>
       </button>
 
@@ -29,6 +30,10 @@
           min="0"
           max="100"
           step="0.1"
+          aria-label="Прогресс анимации"
+          :aria-valuenow="progress"
+          :aria-valuemin="0"
+          :aria-valuemax="100"
         />
         <div class="time-display">
           <span>{{ formatTime(currentTime) }}</span>
@@ -38,8 +43,12 @@
 
       <!-- Speed Control -->
       <div class="speed-control">
-        <label>Скорость:</label>
-        <select v-model="playbackSpeed" @change="onSpeedChange">
+        <label for="animation-speed-select">Скорость:</label>
+        <select
+          id="animation-speed-select"
+          v-model="playbackSpeed"
+          @change="onSpeedChange"
+        >
           <option :value="0.25">0.25x</option>
           <option :value="0.5">0.5x</option>
           <option :value="1">1x</option>
@@ -51,11 +60,7 @@
       <!-- Loop Control -->
       <div class="loop-control">
         <label>
-          <input 
-            type="checkbox" 
-            v-model="loop"
-            @change="onLoopChange"
-          />
+          <input type="checkbox" v-model="loop" @change="onLoopChange" />
           Повтор
         </label>
       </div>
@@ -64,27 +69,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 // Интерфейс входных параметров компонента
 interface Props {
-  hasAnimations?: boolean;    // Есть ли анимации в модели
-  isPlaying?: boolean;         // Воспроизводится ли анимация
-  currentTime?: number;        // Текущее время анимации в секундах
-  duration?: number;           // Общая длительность анимации в секундах
-  loop?: boolean;              // Повторять ли анимацию
-  playbackSpeed?: number;      // Скорость воспроизведения
+  hasAnimations?: boolean; // Есть ли анимации в модели
+  isPlaying?: boolean; // Воспроизводится ли анимация
+  currentTime?: number; // Текущее время анимации в секундах
+  duration?: number; // Общая длительность анимации в секундах
+  loop?: boolean; // Повторять ли анимацию
+  playbackSpeed?: number; // Скорость воспроизведения
 }
 
 // Интерфейс событий компонента
 interface Emits {
-  (e: 'play'): void;                              // Событие начала воспроизведения
-  (e: 'pause'): void;                             // Событие паузы
-  (e: 'seek', time: number): void;                // Событие перемотки на указанное время
-  (e: 'speed-change', speed: number): void;       // Событие изменения скорости
-  (e: 'loop-change', loop: boolean): void;        // Событие изменения режима повтора
-  (e: 'update:isPlaying', value: boolean): void;  // Обновление состояния воспроизведения
-  (e: 'update:loop', value: boolean): void;       // Обновление состояния повтора
+  (e: 'play'): void; // Событие начала воспроизведения
+  (e: 'pause'): void; // Событие паузы
+  (e: 'seek', time: number): void; // Событие перемотки на указанное время
+  (e: 'speed-change', speed: number): void; // Событие изменения скорости
+  (e: 'loop-change', loop: boolean): void; // Событие изменения режима повтора
+  (e: 'update:isPlaying', value: boolean): void; // Обновление состояния воспроизведения
+  (e: 'update:loop', value: boolean): void; // Обновление состояния повтора
   (e: 'update:playbackSpeed', value: number): void; // Обновление скорости воспроизведения
 }
 
@@ -110,13 +115,19 @@ const playbackSpeed = ref(props.playbackSpeed);
 const loop = ref(props.loop);
 
 // Отслеживание изменений входных параметров
-watch(() => props.playbackSpeed, (newSpeed) => {
-  playbackSpeed.value = newSpeed;
-});
+watch(
+  () => props.playbackSpeed,
+  (newSpeed) => {
+    playbackSpeed.value = newSpeed;
+  },
+);
 
-watch(() => props.loop, (newLoop) => {
-  loop.value = newLoop;
-});
+watch(
+  () => props.loop,
+  (newLoop) => {
+    loop.value = newLoop;
+  },
+);
 
 // Переключение между воспроизведением и паузой
 const togglePlayPause = () => {
@@ -308,10 +319,72 @@ const formatTime = (seconds: number): string => {
   user-select: none;
 }
 
-.loop-control input[type="checkbox"] {
+.loop-control input[type='checkbox'] {
   width: 18px;
   height: 18px;
   cursor: pointer;
   accent-color: #4a90e2;
+}
+
+.play-pause-btn:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 3px;
+}
+
+.progress-bar:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 2px;
+}
+
+/* Мобильные стили */
+@media (max-width: 768px) {
+  .animation-controls {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 16px 20px 20px;
+  }
+
+  .play-pause-btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .play-pause-btn svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Увеличиваем ползунок для пальцев */
+  .progress-bar {
+    height: 8px;
+    cursor: pointer;
+  }
+
+  .progress-bar::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  .progress-bar::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  .speed-control select {
+    padding: 10px 12px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  .loop-control input[type='checkbox'] {
+    width: 22px;
+    height: 22px;
+  }
+
+  .loop-control label {
+    font-size: 15px;
+    gap: 12px;
+  }
 }
 </style>
