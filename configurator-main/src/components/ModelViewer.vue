@@ -1,9 +1,23 @@
 <template>
-  <div ref="containerRef" class="viewer-container"></div>
+  <div ref="containerRef" class="viewer-container">
+    <div 
+      v-if="hoveredPart" 
+      class="model-tooltip"
+      :style="{ 
+        left: tooltipPos.x + 'px', 
+        top: tooltipPos.y + 'px' 
+      }"
+    >
+      <div class="tooltip-name">{{ hoveredPart.name }}</div>
+      <div v-if="hoveredPart.description" class="tooltip-desc">
+        {{ hoveredPart.description }}
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, onMounted, onBeforeUnmount, watch, reactive } from "vue";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -46,6 +60,9 @@ let lightHelperGroup: THREE.Group;
 let lightSprite: THREE.Sprite;
 let lightLine: THREE.Line;
 
+const hoveredPart = ref<ModelPart | null>(null);
+const tooltipPos = reactive({ x: 0, y: 0 });
+
 // Переменные для анимации
 let mixer: THREE.AnimationMixer | null = null;
 let animations: THREE.AnimationClip[] = [];
@@ -64,11 +81,14 @@ onMounted(() => {
   animate();
   window.addEventListener("resize", onWindowResize);
   containerRef.value?.addEventListener("click", onCanvasClick);
+  containerRef.value?.addEventListener("mousemove", onMouseMove);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", onWindowResize);
   containerRef.value?.removeEventListener("click", onCanvasClick);
+  containerRef.value?.removeEventListener("mousemove", onMouseMove);
+  
   cancelAnimationFrame(animationId);
   if (mixer) {
     mixer.stopAllAction();
@@ -76,6 +96,40 @@ onBeforeUnmount(() => {
   renderer.dispose();
   controls.dispose();
 });
+
+// Обработка движения мыши для тултипа
+function onMouseMove(event: MouseEvent) {
+  if (!containerRef.value || !model) return;
+
+  const rect = containerRef.value.getBoundingClientRect();
+  
+  // Обновляем координаты для Raycaster (нормализованные -1..1)
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  // Обновляем позицию тултипа в пикселях (с небольшим отступом от курсора)
+  tooltipPos.x = event.clientX - rect.left + 15;
+  tooltipPos.y = event.clientY - rect.top + 15;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(model.children, true);
+
+  if (intersects.length > 0 && intersects[0]) {
+    const clickedMesh = intersects[0].object as THREE.Mesh;
+    const part = parts.find((p) => p.mesh === clickedMesh);
+
+    if (part && part.visible) {
+      hoveredPart.value = part;
+      containerRef.value.style.cursor = 'pointer';
+    } else {
+      hoveredPart.value = null;
+      containerRef.value.style.cursor = 'default';
+    }
+  } else {
+    hoveredPart.value = null;
+    containerRef.value.style.cursor = 'default';
+  }
+}
 
 watch(
   () => props.selectedPart,
@@ -540,30 +594,30 @@ function applyTexturePack(pack: TexturePack) {
       textureLoader.load(
         absoluteTexturePath,
         (texture) => {
-          if (part.mesh) {
+        if (part.mesh) {
             console.log(
               `✓ Текстура загружена для ${part.name} (${part.materialName})`,
             );
 
-            const originalMat = (part.mesh as any).originalMaterial;
-            const material = originalMat.clone();
+          const originalMat = (part.mesh as any).originalMaterial;
+          const material = originalMat.clone();
 
             // Правильно настраиваем текстуру
-            texture.colorSpace = THREE.SRGBColorSpace;
+          texture.colorSpace = THREE.SRGBColorSpace;
             texture.flipY = false; // Для GLTF текстур
 
-            material.map = texture;
+          material.map = texture;
             // Сохранить все важные свойства
             material.transparent = originalMat.transparent;
             material.opacity = originalMat.opacity;
             material.side = originalMat.side;
             material.alphaTest = originalMat.alphaTest;
             material.depthWrite = originalMat.depthWrite;
-            material.needsUpdate = true;
+          material.needsUpdate = true;
 
-            part.mesh.material = material;
-            (part.mesh as any).originalMaterial = material;
-          }
+          part.mesh.material = material;
+          (part.mesh as any).originalMaterial = material;
+        }
         },
         undefined,
         (_error) => {
@@ -592,5 +646,32 @@ function updatePartsVisibility(visibleParts: Set<string>) {
   width: 100%;
   height: 100%;
   position: relative;
+}
+
+/* Стили тултипа */
+.model-tooltip {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: none; /* Чтобы тултип не мешал рейкасту */
+  background: rgba(28, 28, 28, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 200px;
+}
+
+.tooltip-name {
+  font-weight: 600;
+  color: #4a90e2;
+  margin-bottom: 2px;
+}
+
+.tooltip-desc {
+  font-size: 11px;
+  color: #ccc;
+  line-height: 1.3;
 }
 </style>
