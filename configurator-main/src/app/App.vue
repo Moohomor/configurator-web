@@ -103,7 +103,7 @@
         </div>
 
         <ModelViewer
-          :model-path="state.selectedModel.path"
+          :model-path="state.selectedModel.path!"
           :selected-part="state.selectedPart"
           :selected-texture-pack="state.selectedTexturePack"
           :visible-parts="visiblePartsSet"

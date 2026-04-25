@@ -1,16 +1,14 @@
 <template>
   <div class="configurator-model-selector">
-    <h2>Выберите модель</h2>
-
-    <div class="category-tabs" role="tablist" aria-label="Категории моделей">
+    <div class="tabs" role="tablist" aria-label="Категории моделей">
       <button
         v-for="tab in categoryTabs"
         :key="tab.id"
         :id="`tab-${tab.id}`"
         type="button"
         role="tab"
-        class="category-tab"
-        :class="{ active: tab.id === activeCategory }"
+        class="tab"
+        :class="{ 'tab--active': tab.id === activeCategory }"
         :aria-selected="tab.id === activeCategory"
         aria-controls="models-panel"
         @click="activeCategory = tab.id"
@@ -20,29 +18,41 @@
     </div>
 
     <div
-      v-if="filteredModels.length"
+      v-if="columns.length"
       id="models-panel"
-      class="models-grid"
+      class="columns"
+      :style="{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }"
       role="tabpanel"
       :aria-labelledby="`tab-${activeCategory}`"
     >
-      <div
-        v-for="model in filteredModels"
-        :key="model.id"
-        class="model-card"
-        role="button"
-        tabindex="0"
-        :aria-label="`Выбрать модель ${model.name}`"
-        @click="$emit('select', model)"
-        @keydown.enter.prevent="$emit('select', model)"
-        @keydown.space.prevent="$emit('select', model)"
-      >
-        <div class="model-preview">
-          <img v-if="model.preview" :src="resolvePreviewUrl(model.preview)" :alt="model.name" />
-          <div v-else class="preview-placeholder">🚂</div>
+      <section v-for="col in columns" :key="col.title || 'no-subcategory'" class="column">
+        <h3 v-if="col.showTitle" class="column-header">{{ col.title }}</h3>
+        <div class="card-grid">
+          <div
+            v-for="model in col.models"
+            :key="model.id"
+            class="card"
+            :class="{ 'card--unavailable': model.available === false }"
+            :role="model.available === false ? undefined : 'button'"
+            :tabindex="model.available === false ? undefined : 0"
+            :aria-disabled="model.available === false ? 'true' : undefined"
+            :aria-label="model.available === false ? model.name : `Выбрать модель ${model.name}`"
+            @click="onCardClick(model, $event)"
+            @keydown.enter.prevent="onCardActivate(model)"
+            @keydown.space.prevent="onCardActivate(model)"
+          >
+            <div class="card-preview">
+              <img
+                v-if="model.preview"
+                :src="resolvePreviewUrl(model.preview)"
+                :alt="model.name"
+              />
+              <div v-else class="card-preview-placeholder" aria-hidden="true">🚂</div>
+            </div>
+            <div class="card-name">{{ model.name }}</div>
+          </div>
         </div>
-        <h3>{{ model.name }}</h3>
-      </div>
+      </section>
     </div>
 
     <p v-else class="empty-state">В этой вкладке пока нет моделей.</p>
@@ -59,7 +69,7 @@ interface Props {
 
 const props = defineProps<Props>();
 
-defineEmits<{
+const emit = defineEmits<{
   select: [model: Model];
 }>();
 
@@ -69,19 +79,74 @@ const categoryTabs: Array<{ id: ModelCategory; label: string }> = [
   { id: "electric-and-diesel-trains", label: "Электропоезда и дизель-поезда" },
   { id: "passenger-cars", label: "Пассажирские вагоны" },
   { id: "special-cars", label: "Специальные вагоны" },
+  { id: "parts", label: "Детали" },
 ];
+
+// Fixed column order per tab. Subcategories not listed here fall to the end
+// in first-seen order.
+const subcategoryOrder: Partial<Record<ModelCategory, string[]>> = {
+  locomotives: ["Грузовые", "Пассажирские", "Промышленные/маневровые"],
+  "metro-cars": ["Ключевые проекты", "Экспорт", "Спецпроекты"],
+  "electric-and-diesel-trains": ["Электропоезда", "Дизель-поезда"],
+  "passenger-cars": ["Одноэтажные", "Двухэтажные"],
+  "special-cars": ["Специальные вагоны"],
+};
 
 const activeCategory = ref<ModelCategory>("locomotives");
 
-const filteredModels = computed(() =>
-  props.models.filter((model) => {
-    if (model.category) {
-      return model.category === activeCategory.value;
-    }
+interface Column {
+  title: string;
+  showTitle: boolean;
+  models: Model[];
+}
 
+const columns = computed<Column[]>(() => {
+  const filtered = props.models.filter((m) => {
+    if (m.category) return m.category === activeCategory.value;
     return activeCategory.value === "special-cars";
-  })
-);
+  });
+
+  // Group by subcategory
+  const groups = new Map<string, Model[]>();
+  for (const m of filtered) {
+    const key = m.subcategory ?? "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(m);
+  }
+
+  const order = subcategoryOrder[activeCategory.value] ?? [];
+  const orderedKeys: string[] = [];
+  for (const key of order) {
+    if (groups.has(key)) orderedKeys.push(key);
+  }
+  for (const key of groups.keys()) {
+    if (!orderedKeys.includes(key)) orderedKeys.push(key);
+  }
+
+  // If every model in this tab has no subcategory, render a single
+  // column without a header.
+  const allHaveNoSubcategory = orderedKeys.length === 1 && orderedKeys[0] === "";
+
+  return orderedKeys.map((key) => ({
+    title: key,
+    showTitle: !allHaveNoSubcategory && key !== "",
+    models: groups.get(key)!,
+  }));
+});
+
+function onCardClick(model: Model, event: MouseEvent) {
+  if (model.available === false) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  emit("select", model);
+}
+
+function onCardActivate(model: Model) {
+  if (model.available === false) return;
+  emit("select", model);
+}
 
 function resolvePreviewUrl(previewPath: string): string {
   if (
@@ -92,7 +157,6 @@ function resolvePreviewUrl(previewPath: string): string {
   ) {
     return previewPath;
   }
-
   const baseUrl = window.parent?.location?.href || window.location.href;
   return new URL(previewPath, baseUrl).href;
 }
@@ -100,100 +164,147 @@ function resolvePreviewUrl(previewPath: string): string {
 
 <style>
 .configurator-model-selector {
-  max-width: 1100px;
   margin: 0 auto;
-  padding: 40px 20px;
+  padding: 0 32px 60px;
+  color: #1a1a1a;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    Cantarell, sans-serif;
+  overflow-y: auto;
+  max-height: 100vh;
 }
 
-.configurator-model-selector h2 {
-  text-align: center;
-  margin-bottom: 30px;
-  color: #333;
-  font-size: 28px;
-}
-
-.configurator-model-selector .category-tabs {
+/* Tabs row */
+.configurator-model-selector .tabs {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 28px;
+  border-bottom: 1px solid #d0d0d0;
+  margin-bottom: 40px;
 }
-
-.configurator-model-selector .category-tab {
-  border: 1px solid #d0d7de;
-  background: #fff;
-  color: #444;
-  border-radius: 999px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 500;
+.configurator-model-selector .tab {
+  flex: 1;
+  padding: 14px 8px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid #d0d0d0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #1a1a1a;
   cursor: pointer;
-  transition: all 0.2s ease;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+.configurator-model-selector .tab:last-child {
+  border-right: none;
+}
+.configurator-model-selector .tab:hover {
+  color: #00a4cf;
+}
+.configurator-model-selector .tab--active {
+  color: #00a4cf;
+  box-shadow: inset 0 -2px 0 #00a4cf;
+}
+.configurator-model-selector .tab:focus-visible {
+  outline: 2px solid #00a4cf;
+  outline-offset: -2px;
 }
 
-.configurator-model-selector .category-tab:hover {
-  border-color: #4a90e2;
-  color: #4a90e2;
-}
-
-.configurator-model-selector .category-tab.active {
-  background: #4a90e2;
-  border-color: #4a90e2;
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(74, 144, 226, 0.24);
-}
-
-.configurator-model-selector .models-grid {
+/* Columns */
+.configurator-model-selector .columns {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 20px;
+  gap: 40px;
+  align-items: start;
+  padding: 8px 0 40px;
+}
+.configurator-model-selector .column {
+  min-width: 0;
+}
+.configurator-model-selector .column-header {
+  margin: 0 0 28px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d0d0d0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.configurator-model-selector .card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px 20px;
 }
 
-.configurator-model-selector .model-card {
-  background: white;
-  border: 2px solid #e0e0e0;
-  border-radius: 12px;
-  padding: 20px;
+/* Card */
+.configurator-model-selector .card {
+  background: transparent;
+  border: none;
+  padding: 0;
   cursor: pointer;
-  transition: all 0.3s ease;
+  text-align: left;
+  position: relative;
 }
-
-.configurator-model-selector .model-card:hover {
-  border-color: #4a90e2;
-  transform: translateY(-4px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-}
-
-.configurator-model-selector .model-preview {
+.configurator-model-selector .card-preview {
   width: 100%;
-  height: 150px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #f5f5f5;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f5;
-  border-radius: 8px;
-  margin-bottom: 15px;
-  overflow: hidden;
 }
-
-.configurator-model-selector .model-preview img {
+.configurator-model-selector .card-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
+}
+.configurator-model-selector .card-preview-placeholder {
+  font-size: 48px;
+}
+.configurator-model-selector .card-name {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.35;
+  color: #333;
+}
+.configurator-model-selector .card:focus-visible {
+  outline: 2px solid #00a4cf;
+  outline-offset: 3px;
 }
 
-.configurator-model-selector .preview-placeholder {
-  font-size: 64px;
+/* Unavailable card */
+.configurator-model-selector .card--unavailable {
+  cursor: not-allowed;
+}
+.configurator-model-selector .card--unavailable .card-preview img,
+.configurator-model-selector .card--unavailable .card-name {
+  opacity: 0.35;
+}
+.configurator-model-selector .card--unavailable::after {
+  content: "Модель скоро появится";
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  background: rgba(30, 30, 30, 0.92);
+  color: #fff;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+  z-index: 2;
+}
+.configurator-model-selector .card--unavailable:hover::after,
+.configurator-model-selector .card--unavailable:focus-within::after {
+  opacity: 1;
 }
 
-.configurator-model-selector h3 {
-  text-align: center;
-  margin: 0;
-  color: #555;
-  font-size: 18px;
-}
-
+/* Empty state (should not trigger after Task 4) */
 .configurator-model-selector .empty-state {
   text-align: center;
   margin: 40px 0 0;
@@ -201,53 +312,30 @@ function resolvePreviewUrl(previewPath: string): string {
   font-size: 16px;
 }
 
-.configurator-model-selector .model-card:focus-visible {
-  outline: 3px solid #4a90e2;
-  outline-offset: 2px;
+/* Mobile */
+@media (max-width: 768px) {
+  .configurator-model-selector .tabs {
+    overflow-x: auto;
+  }
+  .configurator-model-selector .tab {
+    flex: 0 0 auto;
+    padding: 14px 16px;
+    font-size: 12px;
+  }
+  .configurator-model-selector .columns {
+    grid-template-columns: 1fr !important;
+    gap: 32px;
+    padding: 8px 8px 32px;
+  }
+  .configurator-model-selector .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 14px;
+  }
 }
 
-@media (max-width: 768px) {
-  .configurator-model-selector {
-    padding: 24px 16px;
-    overflow-y: auto;
-    max-height: 100vh;
-  }
-
-  .configurator-model-selector h2 {
-    font-size: 22px;
-    margin-bottom: 20px;
-  }
-
-  .configurator-model-selector .category-tabs {
-    gap: 8px;
-    margin-bottom: 20px;
-  }
-
-  .configurator-model-selector .category-tab {
-    padding: 10px 14px;
-    font-size: 13px;
-    min-height: 44px;
-  }
-
-  .configurator-model-selector .models-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 14px;
-  }
-
-  .configurator-model-selector .model-card {
-    padding: 14px;
-  }
-
-  .configurator-model-selector .model-preview {
-    height: 120px;
-  }
-
-  .configurator-model-selector .preview-placeholder {
-    font-size: 48px;
-  }
-
-  .configurator-model-selector h3 {
-    font-size: 15px;
+@media (max-width: 480px) {
+  .configurator-model-selector .card-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
