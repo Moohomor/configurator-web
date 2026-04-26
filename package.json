@@ -11,5 +11,9 @@
     "dev": "npm run install:configurator && npm run build:configurator && npm run install:example && npm --prefix ./example-main run dev",
     "dev:nobuild": "npm --prefix ./example-main run dev",
     "build:preview": "npm run build && npm run preview"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0"
   }
 }
