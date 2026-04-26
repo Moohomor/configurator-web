@@ -75,11 +75,11 @@
         </button>
       </div>
 
-      <!-- Тёмный оверлей -->
+      <!-- Тёмный оверлей (только для левого сайдбара — info panel самодостаточен) -->
       <div
         v-if="sidebarOpen"
         class="mobile-overlay"
-        @click="closeSidebar"
+        @click="closeAllPanels"
         aria-hidden="true"
       />
 
@@ -155,6 +155,58 @@
           />
         </div>
       </div>
+
+      <!-- Панель информации о модели -->
+      <div
+        class="info-panel-drawer"
+        :class="{ 'info-panel-drawer--open': infoPanelOpen }"
+      >
+        <button
+          class="info-panel-tab"
+          @click="toggleInfoPanel"
+          :aria-label="
+            infoPanelOpen
+              ? 'Закрыть информацию о модели'
+              : 'Открыть информацию о модели'
+          "
+          :aria-expanded="infoPanelOpen"
+          aria-controls="model-info-panel"
+        >
+          <svg
+            v-if="infoPanelOpen"
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+            />
+          </svg>
+          <svg
+            v-else
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+            />
+          </svg>
+        </button>
+
+        <div class="info-panel-content">
+          <ModelInfoPanel
+            v-if="state.selectedModel"
+            :model="state.selectedModel"
+          />
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -163,6 +215,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import AnimationControls from '../components/AnimationControls.vue';
 import ConfigSidebar from '../components/ConfigSidebar.vue';
+import ModelInfoPanel from '../components/ModelInfoPanel.vue';
 import ModelSelector from '../components/ModelSelector.vue';
 import ModelViewer from '../components/ModelViewer.vue';
 import type {
@@ -184,13 +237,21 @@ const state = reactive<ConfiguratorState>({
 // Состояние мобильных панелей
 const sidebarOpen = ref(false);
 const animControlsOpen = ref(false);
+const infoPanelOpen = ref(false);
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value;
+  if (sidebarOpen.value) infoPanelOpen.value = false;
 }
 
-function closeSidebar() {
+function toggleInfoPanel() {
+  infoPanelOpen.value = !infoPanelOpen.value;
+  if (infoPanelOpen.value) sidebarOpen.value = false;
+}
+
+function closeAllPanels() {
   sidebarOpen.value = false;
+  infoPanelOpen.value = false;
 }
 
 function toggleAnimControls() {
@@ -243,6 +304,7 @@ function selectModel(model: Model) {
   state.selectedTexturePack = null;
   sidebarOpen.value = false;
   animControlsOpen.value = false;
+  infoPanelOpen.value = false;
 }
 
 function onPartsLoaded(parts: ModelPart[]) {
@@ -265,6 +327,7 @@ function goBack() {
   state.selectedPart = null;
   state.parts = [];
   state.selectedTexturePack = null;
+  infoPanelOpen.value = false;
 }
 
 function resetConfiguration() {
@@ -433,7 +496,7 @@ function changeAnimationLoop(loop: boolean) {
   user-select: none;
 }
 
-.focus-control-label input[type="checkbox"] {
+.focus-control-label input[type='checkbox'] {
   width: 18px;
   height: 18px;
   cursor: pointer;
@@ -448,6 +511,57 @@ function changeAnimationLoop(loop: boolean) {
   z-index: 10;
   min-width: 400px;
   max-width: 600px;
+}
+
+/* ========== Панель информации о модели ========== */
+.info-panel-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  z-index: 90;
+  transform: translateX(300px);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.info-panel-drawer--open {
+  transform: translateX(0);
+  z-index: 101;
+}
+
+.info-panel-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  min-height: 72px;
+  align-self: center;
+  background: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 12px 0 0 12px;
+  cursor: pointer;
+  box-shadow: -3px 2px 10px rgba(0, 0, 0, 0.25);
+  padding: 10px 0;
+  touch-action: manipulation;
+}
+
+.info-panel-tab:focus-visible {
+  outline: 3px solid #ffd600;
+  outline-offset: 2px;
+}
+
+.info-panel-content {
+  width: 300px;
+  height: 100%;
+  overflow-y: auto;
+  background: white;
+  border-left: 1px solid #e0e0e0;
+  flex-shrink: 0;
 }
 
 /* ========================================================
@@ -568,6 +682,29 @@ function changeAnimationLoop(loop: boolean) {
     font-size: 14px;
     color: #555;
     font-weight: 600;
+  }
+}
+
+/* На очень узких экранах кнопки переносятся внутрь открытой панели */
+@media (max-width: 364px) {
+  .sidebar-drawer--open .sidebar-tab {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    align-self: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1;
+  }
+
+  .info-panel-drawer--open .info-panel-tab {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    align-self: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 999;
   }
 }
 </style>

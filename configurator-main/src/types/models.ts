@@ -15,6 +15,10 @@ export interface Model {
   preview?: string;
   texturePacks?: TexturePack[];
   available?: boolean;
+  description?: string;
+  year?: number;
+  maxSpeed?: number;
+  power?: number;
 }
 
 export interface TexturePack {
