@@ -301,7 +301,7 @@ function selectModel(model: Model) {
   state.selectedModel = model;
   state.parts = [];
   state.selectedPart = null;
-  state.selectedTexturePack = null;
+  state.selectedTexturePack = model.texturePacks?.[0] ?? null;
   sidebarOpen.value = false;
   animControlsOpen.value = false;
   infoPanelOpen.value = false;

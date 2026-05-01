@@ -422,6 +422,7 @@ function loadModel() {
           parts.push(part);
 
           // Добавить свойство для хранения оригинального материала
+          (child as any).baseMaterial = child.material.clone();
           (child as any).originalMaterial = child.material.clone();
 
           // Инициализировать видимость
@@ -430,6 +431,9 @@ function loadModel() {
       });
 
       scene.add(model);
+      if (props.selectedTexturePack) {
+        applyTexturePack(props.selectedTexturePack);
+      }
 
       // Центрировать модель
       const box = new THREE.Box3().setFromObject(model);
@@ -576,12 +580,129 @@ function updateOrbitTarget(part: ModelPart | null) {
 
 function applyTexturePack(pack: TexturePack) {
   const textureLoader = new THREE.TextureLoader();
+  const toAbsoluteTexturePath = (texturePath: string) =>
+    texturePath.startsWith("http")
+      ? texturePath
+      : new URL(texturePath, window.parent.location.href).href;
+  const buildTextureCandidates = (
+    materialName: string,
+    suffixes: string[],
+  ) => suffixes.map((suffix) => `${pack.path}/${materialName}${suffix}`);
+  const loadFirstAvailableTexture = (
+    texturePaths: string[],
+    onLoad: (texture: THREE.Texture) => void,
+    onMissing?: () => void,
+    attempt = 0,
+  ) => {
+    if (attempt >= texturePaths.length) {
+      onMissing?.();
+      return;
+    }
+
+    const texturePath = texturePaths[attempt];
+    if (!texturePath) {
+      onMissing?.();
+      return;
+    }
+
+    const absoluteTexturePath = toAbsoluteTexturePath(texturePath);
+
+    textureLoader.load(
+      absoluteTexturePath,
+      (texture) => onLoad(texture),
+      undefined,
+      () =>
+        loadFirstAvailableTexture(texturePaths, onLoad, onMissing, attempt + 1),
+    );
+  };
+  const applyPbrTexturesToPart = (part: ModelPart) => {
+    if (!part.mesh) return;
+
+    const baseMaterial =
+      (part.mesh as any).baseMaterial ?? (part.mesh as any).originalMaterial;
+    const material = baseMaterial.clone();
+
+    material.map = null;
+    material.metalnessMap = null;
+    material.roughnessMap = null;
+    material.normalMap = null;
+    material.alphaMap = null;
+    material.transparent = baseMaterial.transparent;
+    material.opacity = baseMaterial.opacity;
+    material.side = baseMaterial.side;
+    material.alphaTest = baseMaterial.alphaTest;
+    material.depthWrite = baseMaterial.depthWrite;
+
+    part.mesh.material = material;
+    (part.mesh as any).originalMaterial = material;
+
+    loadFirstAvailableTexture(
+      buildTextureCandidates(part.materialName, [
+        "_baseColor.png",
+        "_baseColor.jpg",
+        "_albedo.png",
+        "_albedo.jpg",
+      ]),
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = false;
+        material.map = texture;
+        material.needsUpdate = true;
+      },
+    );
+
+    loadFirstAvailableTexture(
+      buildTextureCandidates(part.materialName, ["_metallic.png", "_metallic.jpg"]),
+      (texture) => {
+        texture.flipY = false;
+        material.metalness = 1;
+        material.metalnessMap = texture;
+        material.needsUpdate = true;
+      },
+    );
+
+    loadFirstAvailableTexture(
+      buildTextureCandidates(part.materialName, [
+        "_roughness.png",
+        "_roughness.jpg",
+      ]),
+      (texture) => {
+        texture.flipY = false;
+        material.roughness = 1;
+        material.roughnessMap = texture;
+        material.needsUpdate = true;
+      },
+    );
+
+    loadFirstAvailableTexture(
+      buildTextureCandidates(part.materialName, ["_normal.png", "_normal.jpg"]),
+      (texture) => {
+        texture.flipY = false;
+        material.normalMap = texture;
+        material.needsUpdate = true;
+      },
+    );
+
+    loadFirstAvailableTexture(
+      buildTextureCandidates(part.materialName, ["_opacity.png", "_opacity.jpg"]),
+      (texture) => {
+        texture.flipY = false;
+        material.alphaMap = texture;
+        material.transparent = true;
+        material.depthWrite = false;
+        material.needsUpdate = true;
+      },
+    );
+  };
 
   console.log(`Применяю текстур-пак: ${pack.name} (${pack.path})`);
   console.log(`Всего деталей: ${parts.length}`);
 
   parts.forEach((part) => {
     if (part.mesh) {
+      applyPbrTexturesToPart(part);
+      return;
+
       const texturePath = `${pack.path}/${part.materialName}_baseColor.png`;
       const absoluteTexturePath = texturePath.startsWith("http")
         ? texturePath
