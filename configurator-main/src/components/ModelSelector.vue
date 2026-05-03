@@ -215,6 +215,7 @@ function resolvePreviewUrl(previewPath: string): string {
 /* Columns */
 .configurator-model-selector .columns {
   display: grid;
+  grid-template-columns: repeat(3, 1fr) !important;
   gap: 40px;
   align-items: start;
   padding: 8px 0 40px;
