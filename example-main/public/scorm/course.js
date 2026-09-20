@@ -2,22 +2,19 @@
  * course.js
  * Трекер интеракций курса «3D-конфигуратор подвижного состава».
  *
- * Наблюдает за действиями пользователя в конфигураторе, ведёт 7 заданий,
- * вычисляет оценку и завершает SCORM-сессию (score + interactions +
- * completion/success status).
- *
  * Задания:
- *   1) model_selected    — выбрать модель из каталога            (обяз.)
- *   2) viewer_interacted — осмотреть модель в 3D (как-либо)      (обяз.)
- *   3) part_explored     — изучить детали модели (список/панель) (обяз.)
- *   4) info_opened       — открыть информацию о модели           (обяз.)
- *   5) light_adjusted    — настроить освещение                   (обяз.)
- *   6) texture_applied   — сменить текстур-пак                   (бонус)
- *   7) animation_played  — запустить анимацию модели             (бонус)
+ *   1) open_ep20        — открыть модель ЭП20                    (обяз.)
+ *   2) open_moscow2020  — открыть модель «Москва-2020»           (обяз.)
+ *   3) animation_played — воспроизвести анимацию (засчитывается
+ *                         один раз)                              (бонус)
  *
- * Оценка = выполненных заданий / 7 * 100.
- * completed  — когда выполнены все 5 обязательных заданий;
- * success    — passed при оценке >= 71%.
+ * Оценка = выполненных заданий / 3 * 100.
+ * completed  — когда открыты обе обязательные модели;
+ * success    — passed при оценке >= 67 % (т.е. обе модели открыты).
+ *
+ * ВАЖНО: приложение монтируется библиотекой в iframe (#app iframe),
+ * поэтому трекер слушает события не только в документе страницы, но и
+ * в contentDocument iframe (оба документа same-origin).
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -26,14 +23,13 @@
   var reported = false;
 
   var TASKS = [
-    { id: "model_selected", core: true,  title: "Выбрать модель" },
-    { id: "viewer_interacted", core: true, title: "Осмотреть модель в 3D" },
-    { id: "part_explored", core: true, title: "Изучить детали модели" },
-    { id: "info_opened", core: true, title: "Открыть информацию о модели" },
-    { id: "light_adjusted", core: true, title: "Настроить освещение" },
-    { id: "texture_applied", core: false, title: "Сменить текстур-пак" },
-    { id: "animation_played", core: false, title: "Запустить анимацию" },
+    { id: "open_ep20", core: true, title: "Открыть модель ЭП20" },
+    { id: "open_moscow2020", core: true, title: "Открыть модель «Москва-2020»" },
+    { id: "animation_played", core: false, title: "Воспроизвести анимацию" },
   ];
+
+  var CORE_COUNT = TASKS.filter(function (t) { return t.core; }).length;
+  var PASS_PERCENT = Math.round((CORE_COUNT / TASKS.length) * 100); // 67
 
   var done = {}; // id -> ISO timestamp
 
@@ -48,11 +44,18 @@
   }
 
   function coreComplete() {
-    return countCore() >= TASKS.filter(function (t) { return t.core; }).length;
+    return countCore() >= CORE_COUNT;
   }
 
   function scorePercent() {
     return Math.round((countDone() / TASKS.length) * 100);
+  }
+
+  function labelFor(id) {
+    for (var i = 0; i < TASKS.length; i++) {
+      if (TASKS[i].id === id) return TASKS[i].title;
+    }
+    return id;
   }
 
   function markTask(id, via) {
@@ -65,11 +68,22 @@
     }
   }
 
-  function labelFor(id) {
-    for (var i = 0; i < TASKS.length; i++) {
-      if (TASKS[i].id === id) return TASKS[i].title;
+  /* ---- определение задания по карточке модели -------------------- */
+
+  function modelTaskFromCard(card) {
+    var nameEl = card.querySelector(".card-name");
+    var text =
+      (nameEl && (nameEl.textContent || "")) ||
+      card.getAttribute("aria-label") ||
+      card.getAttribute("title") ||
+      "";
+    if (text.indexOf("ЭП20") !== -1 || text.indexOf("EP20") !== -1) {
+      return "open_ep20";
     }
-    return id;
+    if (text.indexOf("Москва-2020") !== -1) {
+      return "open_moscow2020";
+    }
+    return null;
   }
 
   /* ---- финализация ------------------------------------------------ */
@@ -80,9 +94,8 @@
 
     var percent = scorePercent();
     var completed = coreComplete();
-    var success = percent >= 71 ? "passed" : (percent > 0 ? "failed" : "unknown");
+    var success = percent >= PASS_PERCENT ? "passed" : (percent > 0 ? "failed" : "unknown");
 
-    // Все задания передаём в LMS: выполненные — correct, остальные — incorrect.
     var interactions = TASKS.map(function (t) {
       return {
         id: t.id,
@@ -156,6 +169,7 @@
 
     ROOT = document.createElement("div");
     ROOT.id = "course-widget";
+    ROOT.setAttribute("title", "Статус заданий курса (обновляется при действиях в конфигураторе)");
     ROOT.innerHTML =
       '<div class="cw-header">' +
       '<span class="cw-title">Задания курса</span>' +
@@ -250,7 +264,7 @@
     }, 2600);
   }
 
-  /* ---- наблюдение за действиями ----------------------------------- */
+  /* ---- обработчики (вешаются и на страницу, и на iframe) ----------- */
 
   function matchTask(target, selectorMap) {
     if (!target || !target.closest) return null;
@@ -267,52 +281,90 @@
   }
 
   var CLICK_TASKS = {
-    model_selected: ".configurator-model-selector .card:not(.card--unavailable)",
-    part_explored: ".configurator-sidebar .part-info, .configurator-sidebar .part-item .base-button",
-    info_opened: ".info-panel-tab",
-    light_adjusted: ".light-preset-btn",
-    texture_applied: ".texture-pack-item",
     animation_played: ".play-pause-btn",
   };
 
-  document.addEventListener("click", function (e) {
-    if (reported) return;
-    var id = matchTask(e.target, CLICK_TASKS);
-    if (id) markTask(id, "click");
-  });
+  function handleActivate(target, via) {
+    if (reported || !target) return null;
+    var id = matchTask(target, CLICK_TASKS);
+    if (!id) {
+      var card = null;
+      try {
+        card = target.closest
+          ? target.closest(".configurator-model-selector .card:not(.card--unavailable)")
+          : null;
+      } catch (e) {
+        card = null;
+      }
+      if (card) id = modelTaskFromCard(card);
+    }
+    if (id) markTask(id, via);
+    return id;
+  }
 
-  document.addEventListener("keydown", function (e) {
-    if (reported) return;
+  function onClick(e) {
+    handleActivate(e.target, "click");
+  }
+
+  function onKeydown(e) {
     if (e.key !== "Enter" && e.key !== " ") return;
-    var id = matchTask(e.target, CLICK_TASKS);
-    if (id) markTask(id, "keyboard");
-  });
+    handleActivate(e.target, "keyboard");
+  }
 
-  document.addEventListener("pointerdown", function (e) {
+  function onPointerdown(e) {
     if (reported) return;
     var t = e.target;
-    if (t && t.tagName === "CANVAS" && t.closest(".viewer-wrapper")) {
-      markTask("viewer_interacted", "pointer");
+    if (t && t.tagName === "CANVAS" && t.closest && t.closest(".viewer-wrapper")) {
+      // взаимодействие с 3D-видом (не является заданием, но фиксируем
+      // активность; можно использовать для future-proofing)
     }
-    if (t && t.closest && t.closest(".light-pad")) {
-      markTask("light_adjusted", "pointer");
-    }
-  });
+  }
 
-  document.addEventListener("input", function (e) {
-    if (reported) return;
-    var t = e.target;
-    if (t && t.closest && t.closest(".light-height-slider")) {
-      markTask("light_adjusted", "slider");
+  function onInput(e) {
+    /* не используется для заданий, обработчик оставлен зарезервированным */
+  }
+
+  /* ---- привязка обработчиков к документам --------------------------- */
+
+  var attached = typeof WeakSet !== "undefined" ? new WeakSet() : null;
+  var attachLists = {};
+
+  function attachToDoc(doc) {
+    if (!doc) return false;
+    if (attached) {
+      if (attached.has(doc)) return true;
+      attached.add(doc);
+    } else {
+      // старые браузеры: уникальный ключ по tagName/location
+      var key = doc.location ? doc.location.href : "doc";
+      if (attachLists[key] === true) return true;
+      /* в старых браузерах разрешаем повторную привязку (risk: дубли) */
     }
-  });
+    doc.addEventListener("click", onClick);
+    doc.addEventListener("keydown", onKeydown);
+    doc.addEventListener("pointerdown", onPointerdown);
+    doc.addEventListener("input", onInput);
+    return true;
+  }
+
+  function scanForApp() {
+    attachToDoc(global.document);
+    var frames = global.document.querySelectorAll("#app iframe, iframe.app-frame, iframe");
+    for (var i = 0; i < frames.length; i++) {
+      try {
+        var idoc = frames[i].contentDocument;
+        if (idoc) attachToDoc(idoc);
+      } catch (e) {
+        /* cross-origin — пропускаем */
+      }
+    }
+  }
 
   /* ---- жизненный цикл ---------------------------------------------- */
 
   function boot() {
     if (!SCORM) return;
 
-    // Сообщаем обёртке scorm2004.js, что уход со страницы обрабатываем здесь.
     global.__SCORM_COURSE_HANDLING_UNLOAD__ = true;
 
     if (!SCORM.isInitialized()) {
@@ -328,12 +380,15 @@
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
-        // курс-виджет ждём до монтирования приложения (Vue рендерит #app)
         setTimeout(ready, 150);
       });
     } else {
       setTimeout(ready, 150);
     }
+
+    // Слушаем события внутри iframe приложения (создаётся библиотекой).
+    scanForApp();
+    setInterval(scanForApp, 400);
 
     window.addEventListener("beforeunload", function () {
       if (!reported) finish();

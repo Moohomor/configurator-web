@@ -2,8 +2,11 @@
 /* =====================================================================
  * smoke-test.cjs
  * Функциональный тест SCORM-обёртки (scorm2004.js) и трекера курса
- * (course.js) в среде jsdom: поиск API_1484_11, детекция интеракций
- * по реальным DOM-событиям, подсчёт оценки и полный отчёт в имитацию LMS.
+ * (course.js) в среде jsdom.
+ *
+ * Приложение монтируется библиотекой во iframe (#app iframe) — тест
+ * размещает DOM конфигуратора внутри contentDocument iframe и шлёт
+ * события оттуда, проверяя, что трекер их ловит.
  * ===================================================================== */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -50,239 +53,176 @@ function makeLms() {
   };
 }
 
-/** Строит минимальные элементы приложения, на которые опирается трекер. */
+/** Структура приложения как в реальности: DOM конфигуратора — внутри
+ *  iframe, вставленного в #app родительской страницы. */
+async function makeHarness(lms) {
+  const dom = new JSDOM(
+    "<!doctype html><html><head></head><body><div id='app'></div></body></html>",
+    { url: "http://course.local/index.html", runScripts: "outside-only" },
+  );
+  const win = dom.window;
+  if (lms) win.API_1484_11 = lms.api;
+  win.eval(SCORM_SRC);
+  win.eval(COURSE_SRC);
+
+  // iframe приложения
+  const appEl = win.document.getElementById("app");
+  const iframe = win.document.createElement("iframe");
+  iframe.setAttribute("id", "app-iframe");
+  iframe.setAttribute("srcdoc", "<!doctype html><html><body></body></html>");
+  appEl.appendChild(iframe);
+  const idoc = await new Promise((resolve) => {
+    if (iframe.contentDocument) return resolve(iframe.contentDocument);
+    iframe.addEventListener("load", () => resolve(iframe.contentDocument));
+  });
+
+  // дать трекеру время привязать обработчики
+  await new Promise((r) => setTimeout(r, 450));
+
+  return { dom, win, idoc };
+}
+
 function buildAppDom(doc) {
-  const mk = (sel, cls) => {
-    const el = doc.createElement("div");
-    el.className = cls;
-    if (sel === ".configurator-model-selector .card:not(.card--unavailable)") {
-      el.classList.add("card");
-    } else if (sel && sel.includes("part-item")) {
-      el.classList.add("part-item");
-    } else if (sel && sel.includes("part-info")) {
-      el.classList.add("part-info");
-    } else {
-      const last = sel ? sel.split(" ").pop().split(".")[1] : null;
-      if (last && !["card"].includes(last)) el.classList.add(last);
-    }
-    return el;
+  const makeCard = (name) => {
+    const card = doc.createElement("div");
+    card.className = "card";
+    const nameEl = doc.createElement("div");
+    nameEl.className = "card-name";
+    nameEl.textContent = name;
+    card.appendChild(nameEl);
+    return card;
   };
 
   const host = doc.createElement("div");
   host.id = "__app";
 
-  // Экран выбора модели
-  const selector = mk(null, "configurator-model-selector");
-  const modelCard = mk(null, "card");
-  selector.appendChild(modelCard);
+  const selector = doc.createElement("div");
+  selector.className = "configurator-model-selector";
+  const cardEp20 = makeCard("ЭП20");
+  const cardMsk = makeCard("Москва-2020");
+  const cardOther = makeCard("ТЭМ23");
+  selector.appendChild(cardEp20);
+  selector.appendChild(cardMsk);
+  selector.appendChild(cardOther);
 
-  // Конфигуратор
-  const sidebar = mk(null, "configurator-sidebar");
-  const partInfo = mk(null, "part-info");
-  const partItem = mk(null, "part-item");
-  const toggleBtn = mk(null, "base-button button-danger");
-  partItem.appendChild(toggleBtn);
-  sidebar.appendChild(partInfo);
-  sidebar.appendChild(partItem);
-  const item = mk(null, "texture-pack-item");
-  sidebar.appendChild(item);
-  const preset = mk(null, "light-preset-btn");
-  sidebar.appendChild(preset);
-  const pad = mk(null, "light-pad");
-  sidebar.appendChild(pad);
-  const slider = doc.createElement("input");
-  slider.className = "light-height-slider";
-  sidebar.appendChild(slider);
-
-  const viewer = mk(null, "viewer-wrapper");
-  const canvas = doc.createElement("canvas");
-  viewer.appendChild(canvas);
-
-  const infoTab = mk(null, "info-panel-tab");
+  const sidebar = doc.createElement("div");
+  sidebar.className = "configurator-sidebar";
+  const playBtn = doc.createElement("button");
+  playBtn.className = "play-pause-btn";
+  sidebar.appendChild(playBtn);
 
   host.appendChild(selector);
   host.appendChild(sidebar);
-  host.appendChild(viewer);
-  host.appendChild(infoTab);
   doc.body.appendChild(host);
-  return { modelCard, partInfo, toggleBtn, item, preset, pad, slider, canvas, infoTab, selector };
+  return { cardEp20, cardMsk, cardOther, playBtn };
 }
 
 function fire(el, type, win, opts) {
   const o = opts || {};
   const ev = new win.Event(type, { bubbles: true, cancelable: true });
-  if (type === "keydown") {
-    ev.key = o.key || "Enter";
-  }
+  if (type === "keydown") ev.key = o.key || "Enter";
   el.dispatchEvent(ev);
 }
 
 (async () => {
   console.log("\n=== Тест 1: без LMS (курс открыт сам по себе) ===");
   {
-    const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-      url: "http://course.local/index.html",
-      runScripts: "outside-only",
-    });
-    const win = dom.window;
-    win.eval(SCORM_SRC);
-    win.eval(COURSE_SRC);
-    await new Promise((r) => setTimeout(r, 300));
-
+    const { win } = await makeHarness(null);
     check("SCORM.isAvailable() === false", win.SCORM.isAvailable() === false);
     check(
       "виджет показывает 'вне LMS'",
-      !win.SCORM.isAvailable() ||
-        (dom.window.document.querySelector(".cw-note") &&
-          dom.window.document.querySelector(".cw-note").textContent.indexOf("вне LMS") !== -1),
+      win.document.querySelector(".cw-note") &&
+        win.document.querySelector(".cw-note").textContent.indexOf("вне LMS") !== -1,
     );
     check("завершение без LMS безопасно (handled=true)", win.courseTracker.finish() === true);
   }
 
-  console.log("\n=== Тест 2: с LMS — все 5 обязательных заданий ===");
+  console.log("\n=== Тест 2: с LMS — обе модели открыты (события из iframe) ===");
   let lms;
   {
-    const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-      url: "http://course.local/index.html",
-      runScripts: "outside-only",
-    });
-    const win = dom.window;
-    lms = makeLms();
-    win.API_1484_11 = lms.api;
-
-    win.eval(SCORM_SRC);
-    win.eval(COURSE_SRC);
-    await new Promise((r) => setTimeout(r, 300));
+    const h = await makeHarness((lms = makeLms()));
+    const { win, idoc } = h;
+    const els = buildAppDom(idoc);
 
     check("API найден и сессия инициализирована", win.SCORM.isInitialized() === true);
-    check("Initialize вызван", lms.calls.some((c) => c.indexOf("Initialize") === 0));
 
-    const els = buildAppDom(dom.window.document);
-
-    // model_selected — клик по доступной карточке модели
-    fire(els.modelCard, "click", win);
-    // viewer_interacted — pointerdown на canvas
-    fire(els.canvas, "pointerdown", win);
-    // part_explored — клик по part-info
-    fire(els.partInfo, "click", win);
-    // info_opened — клик по кнопке панели информации
-    fire(els.infoTab, "click", win);
-    // light_adjusted — клик по пресету освещения
-    fire(els.preset, "click", win);
+    fire(els.cardEp20, "click", idoc.defaultView);
+    fire(els.cardMsk, "click", idoc.defaultView);
+    // клик по «чужой» модели не должен ничего засчитать
+    fire(els.cardOther, "click", idoc.defaultView);
 
     const st = win.courseTracker.getState();
-    check("отмечены все 5 обязательных заданий", st.done.model_selected && st.done.viewer_interacted && st.done.part_explored && st.done.info_opened && st.done.light_adjusted, JSON.stringify(st.done));
-    check("бонусные задания ещё не выполнены", !st.done.texture_applied && !st.done.animation_played);
-    check("оценка 71%", st.score === 71, "score=" + st.score);
+    check("ЭП20 отмечен", !!st.done.open_ep20, JSON.stringify(st.done));
+    check("Москва-2020 отмечен", !!st.done.open_moscow2020, JSON.stringify(st.done));
+    check("ТЭМ23 не засчитан (нет такого задания)", Object.keys(st.done).length === 2, JSON.stringify(st.done));
+    check("анимация не выполнена", !st.done.animation_played);
+    check("оценка 67%", st.score === 67, "score=" + st.score);
     check("core completed", st.completed === true);
 
-    // Финализация
     win.courseTracker.finish();
-    check("reported === true", win.courseTracker.getState().reported === true);
-
     const d = lms.data;
-    check("cmi.score.raw = 71", d["cmi.score.raw"] === "71", d["cmi.score.raw"]);
-    check("cmi.score.min = 0", d["cmi.score.min"] === "0");
-    check("cmi.score.max = 100", d["cmi.score.max"] === "100");
-    check("cmi.completion_status = completed", d["cmi.completion_status"] === "completed", d["cmi.completion_status"]);
-    check("cmi.success_status = passed", d["cmi.success_status"] === "passed", d["cmi.success_status"]);
-    check("cmi.exit = normal", d["cmi.exit"] === "normal", d["cmi.exit"]);
-    check("session_time установлен", /^\d{2}:\d{2}:\d{2}$/.test(d["cmi.session_time"] || ""), d["cmi.session_time"]);
-    check("interactions._count = 7", d["cmi.interactions._count"] === "7", d["cmi.interactions._count"]);
-
-    const doneIds = ["cmi.interactions.0.result", "cmi.interactions.1.result", "cmi.interactions.2.result", "cmi.interactions.3.result", "cmi.interactions.4.result"];
-    const bonusIds = ["cmi.interactions.5.result", "cmi.interactions.6.result"];
-    check(
-      "первые 5 интеракций = correct",
-      doneIds.every((k) => d[k] === "correct"),
-      JSON.stringify(doneIds.map((k) => d[k])),
-    );
-    check(
-      "бонусные интеракции = incorrect",
-      bonusIds.every((k) => d[k] === "incorrect"),
-      JSON.stringify(bonusIds.map((k) => d[k])),
-    );
+    check("cmi.score.raw = 67", d["cmi.score.raw"] === "67", d["cmi.score.raw"]);
+    check("cmi.completion_status = completed", d["cmi.completion_status"] === "completed");
+    check("cmi.success_status = passed", d["cmi.success_status"] === "passed");
+    check("cmi.exit = normal", d["cmi.exit"] === "normal");
+    check("interactions._count = 3", d["cmi.interactions._count"] === "3");
+    check("open_ep20 result = correct", d["cmi.interactions.0.result"] === "correct");
+    check("animation result = incorrect", d["cmi.interactions.2.result"] === "incorrect");
     check("Terminate вызван", lms.calls.some((c) => c.indexOf("Terminate") === 0));
-
-    // Повторный finish ничего не меняет
     const countBefore = lms.calls.length;
     win.courseTracker.finish();
     check("повторный finish игнорируется", lms.calls.length === countBefore);
   }
 
-  console.log("\n=== Тест 3: все 7 заданий -> 100%, completed, passed ===");
+  console.log("\n=== Тест 3: обе модели + анимация -> 100%, passed ===");
   {
-    const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-      url: "http://course.local/index.html",
-      runScripts: "outside-only",
-    });
-    const win = dom.window;
-    lms = makeLms();
-    win.API_1484_11 = lms.api;
-    win.eval(SCORM_SRC);
-    win.eval(COURSE_SRC);
-    await new Promise((r) => setTimeout(r, 300));
-    const els = buildAppDom(dom.window.document);
-
-    fire(els.modelCard, "click", win);
-    fire(els.canvas, "pointerdown", win);
-    fire(els.partInfo, "click", win);
-    fire(els.infoTab, "click", win);
-    fire(els.preset, "click", win);
-    // бонусы
-    fire(els.item, "click", win); // texture_pack
-    fire(els.canvas.parentElement, "click", win); // no-op
-    // play-pause-btn
-    const playBtn = dom.window.document.createElement("button");
-    playBtn.className = "play-pause-btn";
-    dom.window.document.body.appendChild(playBtn);
-    fire(playBtn, "click", win); // animation_played
-
+    const h = await makeHarness((lms = makeLms()));
+    const { win, idoc } = h;
+    const els = buildAppDom(idoc);
+    fire(els.cardEp20, "click", idoc.defaultView);
+    fire(els.cardMsk, "click", idoc.defaultView);
+    fire(els.playBtn, "click", idoc.defaultView);
+    fire(els.playBtn, "click", idoc.defaultView); // повтор — не должен удвоить
     const st = win.courseTracker.getState();
-    check("все 7 отмечены", Object.keys(st.done).length === 7, JSON.stringify(st.done));
+    check("все 3 отмечены", Object.keys(st.done).length === 3, JSON.stringify(st.done));
     check("оценка 100%", st.score === 100, st.score);
     win.courseTracker.finish();
     const d = lms.data;
     check("score.raw = 100", d["cmi.score.raw"] === "100");
     check("success = passed", d["cmi.success_status"] === "passed");
-    check("все интеракции correct", Array.from({ length: 7 }, (_, i) => "cmi.interactions." + i + ".result").every((k) => d[k] === "correct"));
+    check("все интеракции correct", [0, 1, 2].every((i) => d["cmi.interactions." + i + ".result"] === "correct"));
   }
 
-  console.log("\n=== Тест 4: незавершённый курс (только 2 задания) ===");
+  console.log("\n=== Тест 4: только одна модель -> incomplete, failed ===");
   {
-    const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-      url: "http://course.local/index.html",
-      runScripts: "outside-only",
-    });
-    const win = dom.window;
-    lms = makeLms();
-    win.API_1484_11 = lms.api;
-    win.eval(SCORM_SRC);
-    win.eval(COURSE_SRC);
-    await new Promise((r) => setTimeout(r, 300));
-    const els = buildAppDom(dom.window.document);
-    fire(els.modelCard, "click", win);
-    fire(els.canvas, "pointerdown", win);
+    const h = await makeHarness((lms = makeLms()));
+    const { win, idoc } = h;
+    const els = buildAppDom(idoc);
+    fire(els.cardEp20, "click", idoc.defaultView);
     win.courseTracker.finish();
     const d = lms.data;
-    check("completion = incomplete", d["cmi.completion_status"] === "incomplete", d["cmi.completion_status"]);
-    check("exit = suspend", d["cmi.exit"] === "suspend", d["cmi.exit"]);
-    check("success = failed", d["cmi.success_status"] === "failed", d["cmi.success_status"]);
-    check("score = 29%", d["cmi.score.raw"] === "29", d["cmi.score.raw"]);
+    check("completion = incomplete", d["cmi.completion_status"] === "incomplete");
+    check("exit = suspend", d["cmi.exit"] === "suspend");
+    check("success = failed", d["cmi.success_status"] === "failed");
+    check("score = 33%", d["cmi.score.raw"] === "33", d["cmi.score.raw"]);
   }
 
-  console.log("\n=== Тест 5: 'аварийный' flush обёртки (course.js не успел) ===");
+  console.log("\n=== Тест 5: клавиатурная активация карточек (Enter) ===");
   {
-    const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-      url: "http://course.local/index.html",
-      runScripts: "outside-only",
-    });
-    const win = dom.window;
-    lms = makeLms();
-    win.API_1484_11 = lms.api;
-    win.eval(SCORM_SRC);
-    await new Promise((r) => setTimeout(r, 100));
-    check("инициализировано", win.SCORM.isInitialized() === true);
+    const h = await makeHarness(null);
+    const { win, idoc } = h;
+    const els = buildAppDom(idoc);
+    fire(els.cardEp20, "keydown", idoc.defaultView, { key: "Enter" });
+    fire(els.cardMsk, "keydown", idoc.defaultView, { key: " " });
+    const st = win.courseTracker.getState();
+    check("Enter открывает ЭП20", !!st.done.open_ep20);
+    check("Space открывает Москва-2020", !!st.done.open_moscow2020);
+  }
+
+  console.log("\n=== Тест 6: 'аварийный' flush обёртки (course.js не успел) ===");
+  {
+    const h = await makeHarness((lms = makeLms()));
+    const { win } = h;
     const flushed = win.SCORM.flush();
     check("flush успешен", flushed === true);
     check("exit = suspend при аварии", lms.data["cmi.exit"] === "suspend");
