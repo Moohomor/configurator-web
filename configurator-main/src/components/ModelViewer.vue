@@ -394,8 +394,9 @@ function loadModel() {
     // Уже абсолютный URL
     absolutePath = props.modelPath;
   } else {
-    // Относительный путь - резолвим относительно родительского окна
-    const baseUrl = window.parent?.location?.href || window.location.href;
+    // Относительный путь - резолвим относительно самого курса (document.baseURI),
+    // чтобы пути работали и в iframe LMS, и при открытии страницы напрямую.
+    const baseUrl = document.baseURI;
     absolutePath = new URL(props.modelPath, baseUrl).href;
   }
 
@@ -583,7 +584,7 @@ function applyTexturePack(pack: TexturePack) {
   const toAbsoluteTexturePath = (texturePath: string) =>
     texturePath.startsWith("http")
       ? texturePath
-      : new URL(texturePath, window.parent.location.href).href;
+      : new URL(texturePath, document.baseURI).href;
   const buildTextureCandidates = (
     materialName: string,
     suffixes: string[],
@@ -706,7 +707,7 @@ function applyTexturePack(pack: TexturePack) {
       const texturePath = `${pack.path}/${part.materialName}_baseColor.png`;
       const absoluteTexturePath = texturePath.startsWith("http")
         ? texturePath
-        : new URL(texturePath, window.parent.location.href).href;
+        : new URL(texturePath, document.baseURI).href;
 
       console.log(
         `Деталь: ${part.name}, Материал: ${part.materialName}, Путь: ${absoluteTexturePath}`,

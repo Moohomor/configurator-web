@@ -157,7 +157,7 @@ function resolvePreviewUrl(previewPath: string): string {
   ) {
     return previewPath;
   }
-  const baseUrl = window.parent?.location?.href || window.location.href;
+  const baseUrl = document.baseURI;
   return new URL(previewPath, baseUrl).href;
 }
 </script>

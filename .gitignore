@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# SCORM package build output
+scorm-package/
+configurator-web-scorm2004.zip
+*.zip
