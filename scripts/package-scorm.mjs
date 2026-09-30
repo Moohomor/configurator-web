@@ -1,44 +1,88 @@
 #!/usr/bin/env node
 /* =====================================================================
  * package-scorm.mjs
- * Собирает SCORM 2004 (4th Edition) пакет из собранного приложения:
- *   example-main/dist  ->  scorm-package/ + configurator-web-scorm2004.zip
+ * Собирает SCORM 2004 (4th Edition) пакет из dist/:
+ *   dist/ -> scorm-package/ + configurator-web-scorm2004.zip
  *
- * Генерирует imsmanifest.xml (SCO, все файлы перечислены) и копирует
- * содержимое dist в корень пакета.
+ * Каждая модель с 3D — отдельный урок, то есть отдельный <item> в дереве
+ * курса. Два режима сборки, переключается флагом:
+ *
+ *   --lessons=params  (по умолчанию)  один <resource> = index.html, у
+ *                                     каждого <item> свой
+ *                                     <parameters>?lesson=<id>. Один SCO
+ *                                     на весь курс: одна оценка, один
+ *                                     suspend_data, прогресс по всем
+ *                                     моделям в одной точке. Требует,
+ *                                     чтобы LMS умела <parameters>.
+ *
+ *   --lessons=files                 отдельный <resource> и отдельный
+ *                                     lesson-<id>.html на каждый урок.
+ *                                     У каждого урока своя оценка и своя
+ *                                     запись в журнале. Работает на любой
+ *                                     LMS, но агрегировать прогресс по
+ *                                     курсу без поддержки adlseq нельзя.
+ *
+ * imsmanifest.xml генерируется из содержимого dist, новые модели и
+ * текстуры попадают в пакет сами.
  * ===================================================================== */
-import { mkdirSync, cpSync, readdirSync, statSync, rmSync, existsSync } from "node:fs";
-import { join, relative, sep, dirname } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { readLessons } from "./catalog.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
-const DIST = join(ROOT, "example-main", "dist");
+const DIST = join(ROOT, "dist");
 const OUT = join(ROOT, "scorm-package");
+const CATALOG = join(ROOT, "src", "catalog", "models.json");
+
+const ZIP = join(ROOT, "configurator-web-scorm2004.zip");
 
 const TITLE = "3D-конфигуратор подвижного состава";
+const CATALOG_TITLE = "Каталог моделей";
 const ID = "configurator_web_scorm2004";
-const ID_RES = "res-configurator-sco";
 const SCHEMA = "adlscorm";
 const SCHEMA_VERSION = "2004 4th Edition";
 
-/* ---------- файлы пакета ---------- */
+/* ---------- режим уроков ---------- */
+
+const modeArg = process.argv
+  .slice(2)
+  .find((arg) => arg.startsWith("--lessons="));
+const LESSONS_MODE = modeArg ? modeArg.slice("--lessons=".length) : "params";
+
+if (!["params", "files"].includes(LESSONS_MODE)) {
+  console.error(
+    `Ошибка: --lessons=${LESSONS_MODE}. Допустимо: params или files.`,
+  );
+  process.exit(1);
+}
+
+/* ---------- вспомогательное ---------- */
 
 function walk(dir, base, acc = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    const rel = relative(base, full).split(sep).join("/");
     if (statSync(full).isDirectory()) {
       walk(full, base, acc);
     } else {
-      acc.push(rel);
+      acc.push(relative(base, full).split(sep).join("/"));
     }
   }
   return acc;
 }
 
-function xmlEscape(s) {
-  return s
+function xmlEscape(value) {
+  return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -48,13 +92,70 @@ function xmlEscape(s) {
 
 /* ---------- imsmanifest.xml ---------- */
 
-function buildManifest(files) {
+/**
+ * @param {string[]} files все файлы пакета относительно корня
+ * @param {{id: string, name: string}[]} lessons уроки = модели с 3D
+ */
+function buildManifest(files, lessons) {
   const fileTags = files
-    .map((f) => `      <file href="${xmlEscape(f)}"/>`)
+    .map((file) => `      <file href="${xmlEscape(file)}"/>`)
     .join("\n");
 
+  // В режиме files каждая модель — свой resource, иначе все уроки
+  // ссылаются на один index.html через <parameters>.
+  // Каталог — входная точка курса, отдельный item без параметров: он
+  // открывает SCO без ?lesson=, то есть как «все уроки сразу».
+  const catalogResource = `    <resource identifier="res-catalog" type="webcontent" adlcp:scormType="sco" href="index.html">
+${fileTags}
+    </resource>`;
+
+  const lessonResources = lessons
+    .map(
+      (lesson, index) => `    <resource identifier="res-lesson-${
+        index + 1
+      }" type="webcontent" adlcp:scormType="sco" href="lesson-${xmlEscape(
+        lesson.id,
+      )}.html">
+${fileTags}
+    </resource>`,
+    )
+    .join("\n");
+
+  const resources =
+    LESSONS_MODE === "files"
+      ? `${catalogResource}\n${lessonResources}`
+      : catalogResource;
+
+  const itemFor = (lesson, index) => {
+    const identifierref =
+      LESSONS_MODE === "files" ? `res-lesson-${index + 1}` : "res-catalog";
+    // В режиме params ресурс общий, различия — в query-строке запуска.
+    const parameters =
+      LESSONS_MODE === "files"
+        ? ""
+        : `\n      <parameters>?lesson=${xmlEscape(lesson.id)}</parameters>`;
+
+    return `      <item identifier="item-lesson-${
+      index + 1
+    }" identifierref="${identifierref}">
+        <title>${xmlEscape(lesson.name)}</title>${parameters}
+      </item>`;
+  };
+
+  const items = [
+    `      <item identifier="item-catalog" identifierref="res-catalog">
+        <title>${xmlEscape(CATALOG_TITLE)}</title>
+      </item>`,
+    ...lessons.map(itemFor),
+  ].join("\n");
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- SCORM 2004 4th Edition Content Package -->
+<!-- SCORM 2004 4th Edition Content Package
+     Режим уроков: ${LESSONS_MODE}${
+       LESSONS_MODE === "params"
+         ? " (один SCO, урок передаётся как ?lesson=<id>)"
+         : " (отдельный SCO и href на каждый урок)"
+     } -->
 <manifest identifier="${ID}"
     xmlns="http://www.imsglobal.org/xsd/imscp_v1p1"
     xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"
@@ -81,7 +182,7 @@ function buildManifest(files) {
         </imsmd:title>
         <imsmd:language>ru</imsmd:language>
         <imsmd:description>
-          <imsmd:string xml:lang="ru">3D-конфигуратор подвижного состава: каталог моделей локомотивов, вагонов и деталей с возможностью просмотра, настройки текстур, освещения и анимаций.</imsmd:string>
+          <imsmd:string xml:lang="ru">3D-конфигуратор подвижного состава: ${lessons.length} моделей локомотивов, вагонов и деталей с возможностью просмотра, настройки текстур, освещения и анимаций.</imsmd:string>
         </imsmd:description>
       </imsmd:general>
       <imsmd:lifeCycle>
@@ -106,16 +207,12 @@ function buildManifest(files) {
   <organizations default="org-main">
     <organization identifier="org-main">
       <title>${xmlEscape(TITLE)}</title>
-      <item identifier="item-sco" identifierref="${ID_RES}">
-        <title>${xmlEscape(TITLE)}</title>
-      </item>
+${items}
     </organization>
   </organizations>
 
   <resources>
-    <resource identifier="${ID_RES}" type="webcontent" adlcp:scormType="sco" href="index.html">
-${fileTags}
-    </resource>
+${resources}
   </resources>
 </manifest>
 `;
@@ -124,13 +221,34 @@ ${fileTags}
 /* ---------- сборка ---------- */
 
 if (!existsSync(DIST)) {
-  console.error(`Ошибка: не найдена папка сборки ${DIST}. Сначала выполните npm run build.`);
+  console.error(
+    `Ошибка: не найдена папка сборки ${DIST}. Сначала выполните npm run build.`,
+  );
   process.exit(1);
+}
+
+const lessons = readLessons(CATALOG);
+if (lessons.length === 0) {
+  console.error("Ошибка: в каталоге нет моделей с 3D — нечего упаковывать.");
+  process.exit(1);
+}
+
+if (LESSONS_MODE === "files") {
+  const missing = lessons
+    .filter((lesson) => !existsSync(join(DIST, `lesson-${lesson.id}.html`)))
+    .map((lesson) => lesson.id);
+  if (missing.length) {
+    console.error(
+      `Ошибка: в dist нет файлов уроков: ${missing.join(", ")}.\n` +
+        "Пересоберите приложение (npm run build).",
+    );
+    process.exit(1);
+  }
 }
 
 console.log("Сканирую собранное приложение...");
 const files = walk(DIST, DIST);
-console.log(`Файлов в пакете: ${files.length}`);
+console.log(`Файлов в пакете: ${files.length}, уроков: ${lessons.length}`);
 
 if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -138,28 +256,23 @@ mkdirSync(OUT, { recursive: true });
 console.log("Копирую файлы в scorm-package/ ...");
 cpSync(DIST, OUT, { recursive: true });
 
-console.log("Генерирую imsmanifest.xml ...");
-const manifest = buildManifest(files);
-const manifestPath = join(OUT, "imsmanifest.xml");
-mkdirSync(dirname(manifestPath), { recursive: true });
+console.log(
+  `Генерирую imsmanifest.xml (режим уроков: ${LESSONS_MODE}) ...`,
+);
+writeFileSync(
+  join(OUT, "imsmanifest.xml"),
+  buildManifest(files, lessons),
+  "utf8",
+);
 
-import { writeFileSync } from "node:fs";
-writeFileSync(manifestPath, manifest, "utf8");
-
-/* ---------- ZIP-архив пакета ---------- */
-
-const ZIP = join(ROOT, "configurator-web-scorm2004.zip");
+/* ---------- ZIP-архив ---------- */
 
 console.log("Создаю ZIP-архив ...");
-import { execFileSync } from "node:child_process";
-import { rmSync as rm } from "node:fs";
+if (existsSync(ZIP)) rmSync(ZIP, { force: true });
 
-if (existsSync(ZIP)) rm(ZIP, { force: true });
-
-// Архив с прямыми слэшами (важно для импорта в LMS на Linux).
-// Используем Python zipfile (доступен в большинстве окружений);
-// при отсутствии python архив создаётся командой PowerShell:
-//   Compress-Archive -Path scorm-package\* -DestinationPath configurator-web-scorm2004.zip
+// Только Python zipfile: PowerShell Compress-Archive и .NET ZipFile
+// пишут записи с обратными слэшами, и LMS на Linux такой пакет не
+// импортирует. Не заменять.
 let zipOk = true;
 try {
   execFileSync(
@@ -170,16 +283,17 @@ try {
     ],
     { cwd: ROOT, stdio: "ignore" },
   );
-} catch (e) {
+} catch {
   zipOk = existsSync(ZIP);
 }
 if (!zipOk) {
-  console.warn("  Не удалось создать ZIP автоматически. Используйте:");
-  console.warn("  Compress-Archive -Path scorm-package\\* -DestinationPath configurator-web-scorm2004.zip");
+  console.warn("  Не удалось создать ZIP автоматически. Создайте вручную:");
+  console.warn(
+    "  Compress-Archive -Path scorm-package\\* -DestinationPath configurator-web-scorm2004.zip",
+  );
 }
 
 console.log("Готово:");
 console.log(`  Пакет (распакованный): ${OUT}`);
 console.log(`  Файлов: ${files.length + 1}`);
-console.log(`  imsmanifest.xml: ${manifestPath}`);
 console.log(`  ZIP: ${ZIP} (${(existsSync(ZIP) ? statSync(ZIP).size / 1048576 : 0).toFixed(1)} MB)`);

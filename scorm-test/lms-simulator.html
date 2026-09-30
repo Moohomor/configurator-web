@@ -22,10 +22,15 @@
 <body>
   <header>
     <h1>LMS Simulator (имитация API_1484_11, SCORM 2004)</h1>
-    <button id="relaunch">Перезапустить курс</button>
+    <label>Точка входа SCO:
+      <select id="sco-select">
+        <option value="/dist/index.html">Каталог (index.html)</option>
+      </select>
+    </label>
+    <button id="relaunch">Перезапустить SCO</button>
   </header>
   <div id="sco-wrap">
-    <iframe id="sco" src="/example-main/dist/index.html"></iframe>
+    <iframe id="sco" src="/dist/index.html"></iframe>
   </div>
   <div id="state">
     <h2>Данные, записанные SCO в LMS</h2>
@@ -91,10 +96,46 @@
         });
       }
 
-      document.getElementById("relaunch").addEventListener("click", function () {
+      // Список уроков берём из собранного каталога: те же источники правды,
+      // что у сборки и упаковщика.
+      var SCO_ROOT = "/dist/index.html";
+      var LESSONS = [
+        "loco-ep20", "loco-tem23", "metro-moscow-2020", "ed4m_car",
+        "train-ivolga-3", "reductor", "sa-3", "truck"
+      ];
+
+      var select = document.getElementById("sco-select");
+      var lessonOpt = document.createElement("optgroup");
+      lessonOpt.label = "Уроки (?lesson=)";
+      LESSONS.forEach(function (id) {
+        var opt = document.createElement("option");
+        opt.value = SCO_ROOT + "?lesson=" + id;
+        opt.textContent = "Урок: " + id;
+        lessonOpt.appendChild(opt);
+      });
+      select.appendChild(lessonOpt);
+
+      var filesOpt = document.createElement("optgroup");
+      filesOpt.label = "Уроки (lesson-<id>.html, режим --lessons=files)";
+      LESSONS.forEach(function (id) {
+        var opt = document.createElement("option");
+        opt.value = "/dist/lesson-" + id + ".html";
+        opt.textContent = "Урок: " + id;
+        filesOpt.appendChild(opt);
+      });
+      select.appendChild(filesOpt);
+
+      select.addEventListener("change", function () {
         data = {};
+        calls = [];
         render();
-        document.getElementById("sco").src = "/example-main/dist/index.html";
+        document.getElementById("sco").src = select.value;
+      });
+
+      document.getElementById("relaunch").addEventListener("click", function () {
+        // Данные не сбрасываем: так видно, что прогресс читается из
+        // suspend_data при повторном запуске SCO.
+        document.getElementById("sco").src = select.value;
       });
 
       render();
