@@ -247,14 +247,38 @@ if (LESSONS_MODE === "files") {
 }
 
 console.log("Сканирую собранное приложение...");
-const files = walk(DIST, DIST);
-console.log(`Файлов в пакете: ${files.length}, уроков: ${lessons.length}`);
+const allFiles = walk(DIST, DIST);
+
+/*
+ * В режиме params приложение открывает уроки как index.html?lesson=<id>,
+ * поэтому lesson-<id>.html в пакете не нужны. Исключаем их, чтобы на
+ * каждую модель в билде не шло лишнего файла. В режиме files они, наоборот,
+ * единственная точка входа урока.
+ */
+const lessonEntry = /^lesson-[^/]+\.html$/;
+const files =
+  LESSONS_MODE === "params"
+    ? allFiles.filter((file) => !lessonEntry.test(file))
+    : allFiles;
+
+console.log(
+  `Файлов в пакете: ${files.length}, уроков: ${lessons.length}` +
+    (files.length === allFiles.length
+      ? ""
+      : ` (${allFiles.length - files.length} файлов lesson-*.html исключено)`),
+);
 
 if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
 console.log("Копирую файлы в scorm-package/ ...");
 cpSync(DIST, OUT, { recursive: true });
+if (LESSONS_MODE === "params") {
+  // cpSync копирует всё; выкидываем то, чего нет в манифесте.
+  for (const file of allFiles) {
+    if (!files.includes(file)) rmSync(join(OUT, file), { force: true });
+  }
+}
 
 console.log(
   `Генерирую imsmanifest.xml (режим уроков: ${LESSONS_MODE}) ...`,

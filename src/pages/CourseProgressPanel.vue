@@ -60,7 +60,10 @@
       -->
       <div v-if="currentLesson" class="course-panel__lesson">
         <h3 class="course-panel__lesson-title">
-          <a :href="lessonHref(currentLesson.id)">{{ currentLesson.name }}</a>
+          <a v-if="linksEnabled" :href="lessonHref(currentLesson.id)">{{
+            currentLesson.name
+          }}</a>
+          <template v-else>{{ currentLesson.name }}</template>
         </h3>
         <ul class="course-panel__tasks">
           <li
@@ -83,18 +86,21 @@
         </ul>
       </div>
 
-      <nav
-        v-if="otherLessons.length"
-        class="course-panel__others"
-        aria-label="Другие уроки курса"
-      >
+      <!--
+        Внутри LMS это просто список: уроки открываются из меню курса,
+        и ссылки отсюда только сбивают с толку.
+      -->
+      <div v-if="otherLessons.length" class="course-panel__others">
         <p class="course-panel__others-title">Другие уроки курса</p>
         <ul>
           <li v-for="lesson in otherLessons" :key="lesson.id">
-            <a :href="lessonHref(lesson.id)">{{ lesson.name }}</a>
+            <a v-if="linksEnabled" :href="lessonHref(lesson.id)">{{
+              lesson.name
+            }}</a>
+            <template v-else>{{ lesson.name }}</template>
           </li>
         </ul>
-      </nav>
+      </div>
 
       <footer class="course-panel__foot">
         <p class="course-panel__runtime">{{ runtimeLabel }}</p>
@@ -123,6 +129,8 @@ import type { LessonTracker } from "@/scorm/tracker";
 const props = defineProps<{
   tracker: LessonTracker;
   runtimeLabel: string;
+  /** Внутри LMS переходы в уроки выключены — см. App.vue. */
+  linksEnabled?: boolean;
 }>();
 
 const visible = ref(true);

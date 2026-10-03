@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { cmiLog, cmiValues, openScoInLms, scoDocStamp, scoFrame } from "./fakeLms";
+import { cmiLog, cmiValues, openScoInLms, scoFrame } from "./fakeLms";
 
 /**
  * Урок для e2e — автосцепка СА-3: её GLB весит 1,5 МБ, тогда как ЭП20 —
@@ -80,7 +80,7 @@ test.describe("прямая ссылка на урок", () => {
 });
 
 test.describe("навигация каталог ↔ урок", () => {
-  test("карточка — ссылка, переход не перезагружает документ SCO", async ({
+  test("внутри LMS каталог не ведёт в уроки: их открывает меню курса", async ({
     page,
   }) => {
     await openScoInLms(page, "/index.html");
@@ -88,27 +88,46 @@ test.describe("навигация каталог ↔ урок", () => {
 
     await app.getByRole("tab", { name: "Детали" }).click();
 
-    // Настоящий <a href>, а не div: работает «открыть в новой вкладке».
+    // Карточка не ссылка: внутри LMS уроки открываются из меню курса,
+    // и кажущаяся возможность уйти в урок из галереи только путает.
+    await expect(app.locator(`[href*="lesson=${LESSON}"]`)).toHaveCount(0);
+    await expect(app.locator(".card--static")).not.toHaveCount(0);
+    await expect(
+      app.locator(".catalog-lead"),
+    ).toContainText("меню курса");
+
+    // Оценка при этом всё равно считается по курсу целиком.
+    await expect(app.locator(".course-panel")).toBeVisible();
+  });
+
+  test("вне LMS карточка — ссылка, переход не перезагружает документ", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as Window & { __docStamp?: string }).__docStamp =
+        Math.random().toString(36).slice(2);
+    });
+    await page.goto("/index.html");
+    const app = page.locator(".app");
+
+    await app.getByRole("tab", { name: "Детали" }).click();
+
     const card = app.locator(`a.card[href*="lesson=${LESSON}"]`).first();
     await expect(card).toBeVisible();
 
-    const stampBefore = await scoDocStamp(page);
+    const stampBefore = await page.evaluate(
+      () => (window as Window & { __docStamp?: string }).__docStamp,
+    );
     await card.click();
 
     await expect(app.locator(".lesson-title")).toContainText(LESSON_TITLE);
-    // Тот же документ SCO: pushState вместо перехода по ссылке. Настоящая
-    // перезагрузка дала бы второй Initialize в логе фейковой LMS.
-    expect(await scoDocStamp(page)).toBe(stampBefore);
-
-    const log = await cmiLog(page);
-    expect(log.filter((e) => e.method === "Initialize")).toHaveLength(1);
-
-    // Адрес урока попал в историю — ссылкой можно поделиться и перезагрузить.
-    const search = await page
-      .frameLocator("#sco")
-      .locator("body")
-      .evaluate(() => window.location.search);
-    expect(search).toContain(`lesson=${LESSON}`);
+    // Тот же документ: pushState вместо перехода по ссылке.
+    expect(
+      await page.evaluate(
+        () => (window as Window & { __docStamp?: string }).__docStamp,
+      ),
+    ).toBe(stampBefore);
+    expect(page.url()).toContain(`lesson=${LESSON}`);
   });
 
   test("«в каталог» возвращает к галерее", async ({ page }) => {
@@ -118,6 +137,21 @@ test.describe("навигация каталог ↔ урок", () => {
     await app.locator(".lesson-back").click();
     await expect(app.locator(".catalog")).toBeVisible();
     await expect(app.locator(".lesson")).toHaveCount(0);
+  });
+
+  test("в режиме --lessons=files кнопка «в каталог» ведёт на index.html", async ({
+    page,
+  }) => {
+    // SCO открыт как отдельный документ lesson-<id>.html: каталог лежит в
+    // другом документе, и по «текущему пути без query» мы бы остались в
+    // том же уроке.
+    await openScoInLms(page, `/lesson-${LESSON}.html`);
+
+    const back = page.frameLocator("#sco").locator(".lesson-back");
+    await expect(back).toHaveAttribute("href", "/index.html");
+
+    await back.click();
+    await expect(page.frameLocator("#sco").locator(".catalog")).toBeVisible();
   });
 });
 

@@ -29,28 +29,25 @@
         <h3 v-if="col.showTitle" class="column-header">{{ col.title }}</h3>
         <div class="card-grid">
           <component
-            :is="model.available === false ? 'div' : 'a'"
+            :is="isLink(model) ? 'a' : 'div'"
             v-for="model in col.models"
             :key="model.id"
             class="card"
             :class="{
               'card--unavailable': model.available === false,
+              'card--static': !isLink(model) && model.available !== false,
               'card--completed': isCompleted(model.id),
             }"
-            :href="model.available === false ? undefined : lessonHref(model.id)"
-            :tabindex="model.available === false ? undefined : 0"
-            :aria-disabled="model.available === false ? 'true' : undefined"
+            :href="isLink(model) ? lessonHref(model.id) : undefined"
+            :tabindex="isLink(model) ? 0 : undefined"
+            :aria-disabled="isLink(model) ? undefined : 'true'"
             :aria-label="
-              model.available === false
-                ? model.name
-                : `Открыть урок «${model.name}»`
+              isLink(model)
+                ? `Открыть урок «${model.name}»`
+                : model.name
             "
-            :title="
-              model.available === false
-                ? 'Модель скоро появится'
-                : `Открыть урок «${model.name}»`
-            "
-            @click="onCardClick(model, $event)"
+            :title="cardTitle(model)"
+            @click="isLink(model) && onCardClick(model, $event)"
           >
             <div class="card-preview">
               <img
@@ -88,6 +85,14 @@ interface Props {
   models: Model[];
   /** id уроков, по которым задания уже закрыты — галочка на карточке. */
   completedIds?: readonly string[];
+  /**
+   * Разрешить переход в урок по карточке.
+   *
+   * Внутри LMS это `false`: уроки открываются из меню курса, и карточка,
+   * которая на них указывает, только сбивает с толку. Вне LMS переход
+   * остаётся — так галереей удобно пользоваться без LMS.
+   */
+  linksEnabled?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -156,6 +161,20 @@ const columns = computed<Column[]>(() => {
     models: groups.get(key)!,
   }));
 });
+
+/**
+ * Карточка — ссылка на урок, если переход разрешён и модель доступна.
+ * Иначе это `<div>`: незаглушка либо каталог внутри LMS.
+ */
+function isLink(model: Model): boolean {
+  return model.available !== false && props.linksEnabled !== false;
+}
+
+function cardTitle(model: Model): string {
+  if (model.available === false) return "Модель скоро появится";
+  if (props.linksEnabled === false) return "Урок открывается из меню курса";
+  return `Открыть урок «${model.name}»`;
+}
 
 /**
  * Карточка — настоящая ссылка на урок (?lesson=<id>): работает «открыть
@@ -315,6 +334,14 @@ function resolvePreviewUrl(previewPath: string): string {
 .configurator-model-selector .card:focus-visible {
   outline: 2px solid #00a4cf;
   outline-offset: 3px;
+}
+
+/* Карточка без перехода (внутри LMS): курсор и hover-подсветка не нужны. */
+.configurator-model-selector .card--static {
+  cursor: default;
+}
+.configurator-model-selector .card--static:hover .card-name {
+  color: #333;
 }
 
 /* Completed badge */

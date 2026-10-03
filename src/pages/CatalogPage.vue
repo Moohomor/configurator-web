@@ -5,14 +5,18 @@
     <header class="catalog-header">
       <h1 class="catalog-title">Подвижной состав</h1>
       <p class="catalog-lead">
-        Выберите модель — откроется отдельный урок, к нему можно вернуться
-        по прямой ссылке из меню курса.
+        {{
+          linksEnabled
+            ? "Выберите модель — откроется отдельный урок, к нему можно вернуться по прямой ссылке из меню курса."
+            : "Обзор моделей курса. Каждый урок открывается из меню курса."
+        }}
       </p>
     </header>
 
     <ModelSelector
       :models="models"
       :completed-ids="completedIds"
+      :links-enabled="linksEnabled"
       @select="openLesson"
     />
   </div>
@@ -29,6 +33,8 @@ import { lessonsOf } from "@/scorm/lessons";
 const props = defineProps<{
   models: Model[];
   tracker: LessonTracker;
+  /** Внутри LMS уроки открываются из меню курса, карточки — не ссылки. */
+  linksEnabled?: boolean;
 }>();
 
 /** Уроки, по которым закрыты все обязательные задания. */

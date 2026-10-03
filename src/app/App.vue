@@ -7,11 +7,17 @@
     <p v-else-if="!tracker" class="app__message">Загрузка каталога моделей…</p>
     <template v-else>
       <LessonPage v-if="model" :key="model.id" :model="model" :tracker="tracker" />
-      <CatalogPage v-else :models="models" :tracker="tracker" />
+      <CatalogPage
+        v-else
+        :models="models"
+        :tracker="tracker"
+        :links-enabled="linksEnabled"
+      />
       <CourseProgressPanel
         :class="{ 'course-panel--inline': view === 'catalog' }"
         :tracker="tracker"
         :runtime-label="runtime.label"
+        :links-enabled="linksEnabled"
       />
     </template>
   </div>
@@ -61,6 +67,16 @@ const model = computed<Model | null>(() => {
 });
 
 const view = computed(() => (model.value ? "lesson" : "catalog"));
+
+/**
+ * Переходы «каталог ↔ урок» внутри SCO.
+ *
+ * В LMS уроки открываются из меню курса, поэтому карточки галереи
+ * перестают быть ссылками: иначе кажется, что из каталога можно уйти в
+ * урок, и обучающий уходит не туда. Вне LMS переходы оставлены — так
+ * галереей можно пользоваться без LMS.
+ */
+const linksEnabled = computed(() => props.runtime.kind !== "scorm");
 
 /** Все уроки каталога (модели с 3D). */
 const lessons = computed(() => lessonsOf(models.value));
