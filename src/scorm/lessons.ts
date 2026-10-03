@@ -118,11 +118,13 @@ export function lessonTasks(
 }
 
 export interface CourseScore {
+  /** Процент по обязательным заданиям — он и уходит в cmi.score.raw. */
   score: number;
   done: number;
   total: number;
-  coreDone: number;
-  coreTotal: number;
+  /** Выполнено дополнительных (бонусных) заданий. */
+  bonusDone: number;
+  bonusTotal: number;
   /** Все обязательные задания выполнены. */
   completed: boolean;
   passed: boolean;
@@ -132,13 +134,21 @@ const EMPTY_SCORE: CourseScore = {
   score: 0,
   done: 0,
   total: 0,
-  coreDone: 0,
-  coreTotal: 0,
+  bonusDone: 0,
+  bonusTotal: 0,
   completed: false,
   passed: false,
 };
 
-/** Оценка по урокам в области ответственности SCO. */
+/**
+ * Оценка по урокам в области ответственности SCO.
+ *
+ * В знаменатель входят **только обязательные** задания. Бонус (анимация)
+ * засчитывается не у всех моделей и выясняется лишь после загрузки сцены,
+ * поэтому если бы он входил в знаменатель, итог «2 из 16» превращался бы в
+ * «2 из 17» просто от того, что обучающий посмотрел вторую модель. Для
+ * отслеживания прогресса нужна стабильная правая часть дроби.
+ */
 export function scoreProgress(
   lessons: readonly Model[],
   progress: CourseProgress,
@@ -153,16 +163,17 @@ export function scoreProgress(
 
   let done = 0;
   let total = 0;
-  let coreDone = 0;
-  let coreTotal = 0;
+  let bonusDone = 0;
+  let bonusTotal = 0;
 
   for (const lesson of scoped) {
     for (const scored of lessonTasks(lesson, progress)) {
-      total += 1;
-      if (scored.done) done += 1;
       if (scored.task.core) {
-        coreTotal += 1;
-        if (scored.done) coreDone += 1;
+        total += 1;
+        if (scored.done) done += 1;
+      } else {
+        bonusTotal += 1;
+        if (scored.done) bonusDone += 1;
       }
     }
   }
@@ -172,11 +183,49 @@ export function scoreProgress(
     score,
     done,
     total,
-    coreDone,
-    coreTotal,
-    completed: coreTotal > 0 && coreDone === coreTotal,
+    bonusDone,
+    bonusTotal,
+    completed: total > 0 && done === total,
     passed: score >= PASS_PERCENT,
   };
+}
+
+/**
+ * Сериализует прогресс в строку не длиннее `limit` (лимит cmi.suspend_data
+ * в SCORM 2004 — 4096 символов).
+ *
+ * Обрезать строку нельзя: получится невалидный JSON, и при следующем
+ * запуске весь прогресс молча пропадёт. Поэтому при нехватке места
+ * отбрасываются уроки — сначала незаметенные, затем самые давние.
+ */
+export function serializeProgress(
+  progress: CourseProgress,
+  limit: number,
+): string {
+  const json = JSON.stringify(progress);
+  if (json.length <= limit) return json;
+
+  const activityOf = (lessonProgress: LessonProgress): number => {
+    const stamps = [
+      lessonProgress.openedAt,
+      lessonProgress.partAt,
+      lessonProgress.animationAt,
+    ].filter((value): value is string => Boolean(value));
+    if (!stamps.length) return 0;
+    return Math.max(...stamps.map((value) => Date.parse(value) || 0));
+  };
+
+  const oldestFirst = Object.entries(progress).sort(
+    ([, a], [, b]) => activityOf(a) - activityOf(b),
+  );
+
+  const kept: CourseProgress = { ...progress };
+  for (const [lessonId] of oldestFirst) {
+    delete kept[lessonId];
+    const trimmed = JSON.stringify(kept);
+    if (trimmed.length <= limit) return trimmed;
+  }
+  return "{}";
 }
 
 /** Полный набор интеракций по урокам в области ответственности SCO. */

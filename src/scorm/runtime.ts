@@ -18,8 +18,18 @@ import {
   Scorm2004Session,
 } from "./scorm2004";
 
-/** События закрытия SCO: на них обязателен Commit, иначе LMS теряет данные. */
-const LEAVE_EVENTS = ["pagehide", "beforeunload", "visibilitychange"] as const;
+/**
+ * События, на которых SCO реально покидают.
+ *
+ * `visibilitychange` здесь **нет намеренно**: документ SCO уходит в фон
+ * при alt-tab, клике на окно LMS, открытии соседней вкладки. Если на нём
+ * Terminate, сессия закрывается посреди работы, а все последующие SetValue
+ * молча отбрасываются (см. `Scorm2004Session.terminated`) — обучающий
+ * теряет прогресс, и LMS пишет «невозможно сохранить прогресс».
+ * `pagehide`/`beforeunload` срабатывают, только когда документ реально
+ * уничтожают.
+ */
+const LEAVE_EVENTS = ["pagehide", "beforeunload"] as const;
 
 abstract class BaseRuntime {
   protected readonly buffer = new Map<string, InteractionRecord>();
@@ -27,10 +37,7 @@ abstract class BaseRuntime {
 
   constructor() {
     for (const event of LEAVE_EVENTS) {
-      window.addEventListener(event, () => {
-        if (event === "visibilitychange" && !document.hidden) return;
-        this.handleLeave();
-      });
+      window.addEventListener(event, () => this.handleLeave());
     }
   }
 
@@ -95,9 +102,9 @@ export class Scorm2004Runtime extends BaseRuntime
     }
   }
 
-  writeState(state: unknown): void {
+  writeState(json: string): void {
     if (!this.inLms || this.finished) return;
-    this.session.writeSuspendData(state);
+    this.session.writeSuspendData(json);
     this.session.set(
       "cmi.session_time",
       formatDuration(this.session.elapsedSeconds),
@@ -105,9 +112,32 @@ export class Scorm2004Runtime extends BaseRuntime
     this.session.commit();
   }
 
+  /**
+   * Записать текущий прогресс, **не закрывая сессию**: score, completion,
+   * success, location и накопленные интеракции + Commit.
+   *
+   * Вызывается на каждое изменение прогресса, а не только по кнопке
+   * «завершить»: иначе LMS до самого конца показывает 0/0 и превращает
+   * доли секунды работы в потерянные данные, если обучающий ушёл раньше.
+   */
+  report(result: LessonResult): boolean {
+    if (!this.inLms || this.finished) return false;
+    return this.writeProgress(result) && this.session.commit();
+  }
+
   finish(result: LessonResult): boolean {
     if (!this.inLms || this.finished) return false;
 
+    let ok = this.writeProgress(result);
+    ok = this.session.set("cmi.exit", result.exit) && ok;
+    ok = this.session.commit() && ok;
+    ok = this.session.terminate() && ok;
+    this.finished = true;
+    return ok;
+  }
+
+  /** Общая часть report() и finish(). */
+  private writeProgress(result: LessonResult): boolean {
     let ok = this.session.writeScore(
       result.score,
       result.min ?? 0,
@@ -124,10 +154,6 @@ export class Scorm2004Runtime extends BaseRuntime
         "cmi.session_time",
         formatDuration(this.session.elapsedSeconds),
       ) && ok;
-    ok = this.session.set("cmi.exit", result.exit) && ok;
-    ok = this.session.commit() && ok;
-    ok = this.session.terminate() && ok;
-    this.finished = true;
     return ok;
   }
 
@@ -163,9 +189,9 @@ export class LocalRuntime extends BaseRuntime implements LearningRuntime {
     }
   }
 
-  writeState(state: unknown): void {
+  writeState(json: string): void {
     try {
-      localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(state));
+      localStorage.setItem(LOCAL_STATE_KEY, json);
     } catch {
       /* приватный режим браузера — не критично */
     }
@@ -177,6 +203,11 @@ export class LocalRuntime extends BaseRuntime implements LearningRuntime {
       `[курс] итог: ${result.score}% — ${result.success}/${result.completion}; ` +
         `выполнено заданий: ${done} из ${this.interactions.length}`,
     );
+    return true;
+  }
+
+  report(): boolean {
+    /* прогресс и так в localStorage, отправлять некуда */
     return true;
   }
 }

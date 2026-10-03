@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { cmiLog, cmiValues, openScoInLms, scoDocStamp } from "./fakeLms";
+import { cmiLog, cmiValues, openScoInLms, scoDocStamp, scoFrame } from "./fakeLms";
 
 /**
  * Урок для e2e — автосцепка СА-3: её GLB весит 1,5 МБ, тогда как ЭП20 —
@@ -139,6 +139,48 @@ test.describe("учёт заданий", () => {
       (await cmiValues(page))["cmi.suspend_data"]!,
     ) as Record<string, { openedAt: string | null } | undefined>;
     expect(state[LESSON]?.openedAt).toBeTruthy();
+
+    // Оценка уходит сразу, а не по кнопке «завершить»: иначе LMS до ухода
+    // со страницы показывает 0/0 и теряет сделанную работу.
+    const values = await cmiValues(page);
+    expect(values["cmi.score.max"]).toBe("100");
+    expect(Number(values["cmi.score.raw"])).toBeGreaterThan(0);
+    expect(values["cmi.completion_status"]).toBe("incomplete");
+  });
+
+  test("переключение вкладки не закрывает сессию и не теряет прогресс", async ({
+    page,
+  }) => {
+    await openScoInLms(page, `/index.html?lesson=${LESSON}`);
+    await expect
+      .poll(async () => (await cmiValues(page))["cmi.score.raw"], {
+        timeout: 60_000,
+      })
+      .toBeTruthy();
+
+    // SCO уходит в фон: alt-tab, клик на окно LMS, соседняя вкладка.
+    const sco = scoFrame(page);
+    await sco.evaluate(() => {
+      Object.defineProperty(Document.prototype, "hidden", {
+        get: () => true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+    });
+    await expect
+      .poll(async () => await page.evaluate(() => window.__cmiSession.terminated))
+      .toBe(false);
+
+    // Пользователь вернулся и отметил ещё одно задание.
+    const before = Number((await cmiValues(page))["cmi.score.raw"]);
+    await page
+      .frameLocator("#sco")
+      .locator(".part-info")
+      .first()
+      .click({ timeout: 30_000 });
+    await expect
+      .poll(async () => Number((await cmiValues(page))["cmi.score.raw"]))
+      .toBeGreaterThan(before);
   });
 
   test("«завершить» отправляет score, completion, interactions и Terminate", async ({

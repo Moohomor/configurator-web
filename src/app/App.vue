@@ -47,13 +47,23 @@ const lessonId = ref<string | null>(props.lessonId);
 const tracker = shallowRef<LessonTracker | null>(null);
 const loadError = ref<string | null>(null);
 
-const model = computed<Model | null>(() =>
-  lessonId.value
-    ? (models.value.find((item) => item.id === lessonId.value) ?? null)
-    : null,
-);
+/**
+ * Урок = модель с настоящей 3D-моделью. Заглушки каталога уроками не
+ * являются: открывать их как урок нельзя, у них нет `path`, и загрузчик
+ * сцены падает на `undefined`. Поэтому поиск идёт по списку уроков, а не
+ * по всем моделям, и битая ссылка молча открывает каталог.
+ */
+const model = computed<Model | null>(() => {
+  if (!lessonId.value) return null;
+  return (
+    lessons.value.find((lesson) => lesson.id === lessonId.value) ?? null
+  );
+});
 
 const view = computed(() => (model.value ? "lesson" : "catalog"));
+
+/** Все уроки каталога (модели с 3D). */
+const lessons = computed(() => lessonsOf(models.value));
 
 onMounted(async () => {
   try {
@@ -63,7 +73,7 @@ onMounted(async () => {
     // каталог — за весь курс.
     tracker.value = createTracker({
       runtime: props.runtime,
-      lessons: lessonsOf(models.value),
+      lessons: lessons.value,
       scope: currentScope(),
     });
   } catch (error) {

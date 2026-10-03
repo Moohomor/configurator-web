@@ -47,16 +47,24 @@
         Все обязательные задания выполнены.
       </p>
       <p v-else class="course-panel__status">
-        Обязательных заданий: {{ score.coreDone }} из {{ score.coreTotal }}.
+        Обязательных заданий: {{ score.done }} из {{ score.total
+        }}<span v-if="score.bonusTotal">
+          · дополнительных: {{ score.bonusDone }} из {{ score.bonusTotal }}</span
+        >.
       </p>
 
-      <div v-for="lesson in lessons" :key="lesson.id" class="course-panel__lesson">
+      <!--
+        Задания раскрыты только у текущего урока. Список заданий всех
+        восьми уроков читался как «открыть модель Б», хотя её сейчас не
+        видно и открыть нельзя.
+      -->
+      <div v-if="currentLesson" class="course-panel__lesson">
         <h3 class="course-panel__lesson-title">
-          <a :href="lessonHref(lesson.id)">{{ lesson.name }}</a>
+          <a :href="lessonHref(currentLesson.id)">{{ currentLesson.name }}</a>
         </h3>
         <ul class="course-panel__tasks">
           <li
-            v-for="task in tracker.tasksOf(lesson)"
+            v-for="task in tracker.tasksOf(currentLesson)"
             :key="task.key"
             class="course-panel__task"
             :class="{
@@ -74,6 +82,19 @@
           </li>
         </ul>
       </div>
+
+      <nav
+        v-if="otherLessons.length"
+        class="course-panel__others"
+        aria-label="Другие уроки курса"
+      >
+        <p class="course-panel__others-title">Другие уроки курса</p>
+        <ul>
+          <li v-for="lesson in otherLessons" :key="lesson.id">
+            <a :href="lessonHref(lesson.id)">{{ lesson.name }}</a>
+          </li>
+        </ul>
+      </nav>
 
       <footer class="course-panel__foot">
         <p class="course-panel__runtime">{{ runtimeLabel }}</p>
@@ -95,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { currentLessonId, lessonHref, onRouteChange } from "@/scorm/lesson";
 import type { LessonTracker } from "@/scorm/tracker";
 
@@ -107,12 +128,23 @@ const props = defineProps<{
 const visible = ref(true);
 const collapsed = ref(false);
 
-const lessons = props.tracker.lessons;
-
 const score = props.tracker.score;
 const reported = props.tracker.reported;
 const lastResult = props.tracker.lastResult;
 const reportedToLms = props.tracker.reportedToLms;
+
+const lessons = props.tracker.lessons;
+
+/** Урок, открытый прямо сейчас: его задания и разворачиваем. */
+const currentLesson = computed(() => {
+  const id = currentLessonId();
+  return id ? lessons.find((lesson) => lesson.id === id) ?? null : null;
+});
+
+/** Остальные уроки — только ссылками, без чужих заданий. */
+const otherLessons = computed(() =>
+  lessons.filter((lesson) => lesson.id !== currentLesson.value?.id),
+);
 
 function onFinish(): void {
   props.tracker.finish();
@@ -278,6 +310,37 @@ onBeforeUnmount(onRouteChange(syncCollapsed));
   font-size: 11px;
   color: #8a8a8a;
   white-space: nowrap;
+}
+
+.course-panel__others {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.course-panel__others-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.course-panel__others ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.course-panel__others a {
+  font-size: 13px;
+  color: #00364a;
+  text-decoration: none;
+}
+
+.course-panel__others a:hover {
+  text-decoration: underline;
 }
 
 .course-panel__foot {

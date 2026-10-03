@@ -44,20 +44,41 @@ export function currentScope(): LessonScope {
   return { kind: "all" };
 }
 
-/** Ссылка на урок — для <a href> и средств доступности. */
-export function lessonHref(id: string): string {
+/**
+ * Имя HTML-точки входа каталога.
+ *
+ * В режиме `--lessons=files` SCO открыт как `lesson-<id>.html`, и путь
+ * «текущий документ без параметра» вёл бы сам в себя: каталог недостижим,
+ * потому что `currentLessonId()` сперва смотрит в `window.__LESSON__`.
+ * Поэтому адреса всегда строим от `index.html`.
+ */
+const CATALOG_DOC = "index.html";
+
+function buildHref(lessonId: string | null): string {
   const url = new URL(window.location.href);
-  url.searchParams.set("lesson", id);
+  // Один и тот же документ может содержать и каталог, и урок (режим params).
+  const inCatalogDocument = url.pathname.endsWith(`/${CATALOG_DOC}`);
+  url.pathname = inCatalogDocument
+    ? url.pathname
+    : url.pathname.replace(/[^/]*$/, CATALOG_DOC);
+
+  if (lessonId) {
+    url.searchParams.set("lesson", lessonId);
+  } else {
+    url.searchParams.delete("lesson");
+  }
   return url.pathname + url.search + url.hash;
 }
 
-/** Ссылка на каталог (текущий документ без параметра урока). */
-export const catalogHref: string =
-  (() => {
-    const url = new URL(window.location.href);
-    url.searchParams.delete("lesson");
-    return url.pathname + url.search + url.hash;
-  })();
+/** Ссылка на урок — для <a href> и средств доступности. */
+export function lessonHref(id: string): string {
+  return buildHref(id);
+}
+
+/** Ссылка на каталог. */
+export function catalogHref(): string {
+  return buildHref(null);
+}
 
 type RouteListener = () => void;
 const listeners = new Set<RouteListener>();
@@ -73,21 +94,28 @@ export function onRouteChange(listener: RouteListener): () => void {
 }
 
 function navigate(lessonId: string | null): void {
-  const url = new URL(window.location.href);
-  if (lessonId) {
-    url.searchParams.set("lesson", lessonId);
-  } else {
-    url.searchParams.delete("lesson");
+  const target = buildHref(lessonId);
+
+  // В режиме --lessons=files смена урока означает смену документа SCO:
+  // другого способа перейти в каталог просто нет. Reload здесь законен —
+  // это отдельная SCO-сессия, а не второй Initialize в одной.
+  const currentDocument = new URL(window.location.href).pathname;
+  const targetDocument = target.split("?")[0] ?? target;
+  if (currentDocument !== targetDocument) {
+    window.location.href = target;
+    return;
   }
-  if (url.href === window.location.href) {
+
+  if (target === buildHref(currentLessonId())) {
     notify();
     return;
   }
+
   if (window.history?.pushState) {
-    window.history.pushState({ lesson: lessonId }, "", url.href);
+    window.history.pushState({ lesson: lessonId }, "", target);
     notify();
   } else {
-    window.location.href = url.href;
+    window.location.href = target;
   }
 }
 

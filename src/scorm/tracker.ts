@@ -17,6 +17,7 @@ import {
 import type { LearningRuntime, LessonResult } from "@/api/types";
 import type { Model } from "@/configurator/types/models";
 import { currentLessonId } from "./lesson";
+import { SUSPEND_DATA_LIMIT } from "./scorm2004";
 import {
   buildInteractions,
   emptyLessonProgress,
@@ -24,6 +25,7 @@ import {
   LESSON_TASKS,
   PASS_PERCENT,
   scoreProgress,
+  serializeProgress,
   taskKey,
   type ConfiguratorEvent,
   type CourseProgress,
@@ -82,7 +84,37 @@ export function createTracker(options: TrackerOptions): LessonTracker {
   }
 
   function persist(): void {
-    runtime.writeState({ ...progress });
+    runtime.writeState(serializeProgress({ ...progress }, SUSPEND_DATA_LIMIT));
+  }
+
+  /** Текущий итог — тот же объект, что уйдёт в cmi.* при report()/finish(). */
+  function snapshot(exit: LessonResult["exit"]): LessonResult {
+    const current = score.value;
+    return {
+      score: current.score,
+      min: 0,
+      max: 100,
+      completion: current.completed ? "completed" : "incomplete",
+      success:
+        current.score >= PASS_PERCENT
+          ? "passed"
+          : current.score > 0
+            ? "failed"
+            : "unknown",
+      exit,
+      location: currentLessonId() ?? undefined,
+    };
+  }
+
+  /**
+   * Отправить прогресс в LMS, не закрывая сессию.
+   *
+   * Раньше оценка уходила только по кнопке «завершить»: до неё LMS
+   * показывала 0/0, а если обучающий закрыл вкладку — терял всё.
+   */
+  function report(): void {
+    if (reported.value) return;
+    runtime.report(snapshot("suspend"));
   }
 
   /** Отметить событие конфигуратора. Повторные отметки игнорируются. */
@@ -109,6 +141,7 @@ export function createTracker(options: TrackerOptions): LessonTracker {
       timestamp,
     });
     persist();
+    report();
   }
 
   /** 3D-сцена сообщила, есть ли анимация: от этого зависит состав заданий. */
@@ -130,21 +163,7 @@ export function createTracker(options: TrackerOptions): LessonTracker {
       runtime.recordInteraction(interaction);
     }
 
-    const current = score.value;
-    const result: LessonResult = {
-      score: current.score,
-      min: 0,
-      max: 100,
-      completion: current.completed ? "completed" : "incomplete",
-      success:
-        current.score >= PASS_PERCENT
-          ? "passed"
-          : current.score > 0
-            ? "failed"
-            : "unknown",
-      exit: current.completed ? "normal" : "suspend",
-      location: currentLessonId() ?? undefined,
-    };
+    const result = snapshot(score.value.completed ? "normal" : "suspend");
 
     lastResult.value = result;
     reported.value = true;

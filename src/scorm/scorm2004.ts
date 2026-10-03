@@ -68,7 +68,8 @@ export function formatDuration(seconds: number): string {
   );
 }
 
-const SUSPEND_DATA_LIMIT = 4096;
+/** Лимит cmi.suspend_data в SCORM 2004 (CMI Base). */
+export const SUSPEND_DATA_LIMIT = 4096;
 
 /** Одна сессия SCORM: состояние Initialize/Commit/Terminate. */
 export class Scorm2004Session {
@@ -139,19 +140,24 @@ export class Scorm2004Session {
     return ok;
   }
 
-  /** suspend_data с молчаливым обрезанием по лимиту LMS. */
-  writeSuspendData(value: unknown): boolean {
-    let json = JSON.stringify(value ?? null);
-    if (json.length > SUSPEND_DATA_LIMIT) {
-      json = json.slice(0, SUSPEND_DATA_LIMIT);
-    }
+  /**
+   * suspend_data. Строку готовит вызывающий (`serializeProgress` в
+   * lessons.ts): обрезать её здесь нельзя — вышел бы невалидный JSON,
+   * и весь прогресс молча пропал бы при следующем запуске.
+   */
+  writeSuspendData(json: string): boolean {
     return this.set("cmi.suspend_data", json);
   }
 
+  /**
+   * cmi.score.min/max пишутся **до** raw: часть LMS читает границы один раз,
+   * при первом обращении к score, и если в этот момент max ещё не задан,
+   * показывает «0/0» до конца сессии.
+   */
   writeScore(score: number, min = 0, max = 100): boolean {
-    let ok = this.set("cmi.score.raw", String(score));
-    ok = this.set("cmi.score.min", String(min)) && ok;
+    let ok = this.set("cmi.score.min", String(min));
     ok = this.set("cmi.score.max", String(max)) && ok;
+    ok = this.set("cmi.score.raw", String(score)) && ok;
     return ok;
   }
 }

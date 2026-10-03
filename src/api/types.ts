@@ -63,12 +63,19 @@ export interface LearningRuntime {
   start(): void;
   /** Прочитать сохранённое состояние урока. */
   readState<T>(fallback: T): T;
-  /** Сохранить состояние урока (suspend_data). */
-  writeState(state: unknown): void;
+  /**
+   * Сохранить состояние урока.
+   * @param json готовый JSON прогресса: сериализует вызывающий
+   *   (`serializeProgress`), чтобы правило обрезки по лимиту suspend_data
+   *   жило в одном месте и не зависело от SCORM.
+   */
+  writeState(json: string): void;
   /** Записать интеракцию (уходит в LMS при finish()). */
   recordInteraction(interaction: InteractionRecord): void;
   /** Накопленные интеракции — для отладки и тестов. */
   readonly interactions: readonly InteractionRecord[];
+  /** Записать прогресс (score/completion/interactions) и закоммитить, не закрывая сессию. */
+  report(result: LessonResult): boolean;
   /** Отправить результат и закрыть сессию. */
   finish(result: LessonResult): boolean;
   /** Подписаться на уход со страницы (commit при закрытии). */

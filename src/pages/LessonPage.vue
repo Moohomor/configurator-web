@@ -3,7 +3,7 @@
 <template>
   <div class="lesson">
     <header class="lesson-bar">
-      <a class="lesson-back" :href="catalogHref" @click.prevent="onBack">
+      <a class="lesson-back" :href="catalogHref()" @click.prevent="onBack">
         ← Каталог моделей
       </a>
       <h1 class="lesson-title">{{ model.name }}</h1>
