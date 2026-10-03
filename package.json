@@ -9,7 +9,6 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "build:scorm": "npm run build && node scripts/package-scorm.mjs",
-    "build:scorm:files": "npm run build && node scripts/package-scorm.mjs --lessons=files",
     "test": "playwright test"
   },
   "dependencies": {

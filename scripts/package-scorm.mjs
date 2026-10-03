@@ -4,23 +4,17 @@
  * Собирает SCORM 2004 (4th Edition) пакет из dist/:
  *   dist/ -> scorm-package/ + configurator-web-scorm2004.zip
  *
- * Каждая модель с 3D — отдельный урок, то есть отдельный <item> в дереве
- * курса. Два режима сборки, переключается флагом:
+ * Структура одна: каждый пункт меню курса — отдельный SCO.
  *
- *   --lessons=params  (по умолчанию)  один <resource> = index.html, у
- *                                     каждого <item> свой
- *                                     <parameters>?lesson=<id>. Один SCO
- *                                     на весь курс: одна оценка, один
- *                                     suspend_data, прогресс по всем
- *                                     моделям в одной точке. Требует,
- *                                     чтобы LMS умела <parameters>.
+ *   - «Каталог моделей» -> index.html, обзор всего курса;
+ *   - каждый урок       -> lesson-<id>.html, свой <resource>, своя
+ *                          оценка и своя запись в журнале LMS.
  *
- *   --lessons=files                 отдельный <resource> и отдельный
- *                                     lesson-<id>.html на каждый урок.
- *                                     У каждого урока своя оценка и своя
- *                                     запись в журнале. Работает на любой
- *                                     LMS, но агрегировать прогресс по
- *                                     курсу без поддержки adlseq нельзя.
+ * Раньше был ещё режим `--lessons=params`: один SCO на весь курс, урок
+ * передавался как `<parameters>?lesson=<id>`. На WebSoft HCM он не
+ * работает — импорт проходит, а все уроки молча открывают каталог, — и
+ * он удалён вместе с флагом: держать два режима ради неработающего не
+ * было смысла.
  *
  * imsmanifest.xml генерируется из содержимого dist, новые модели и
  * текстуры попадают в пакет сами.
@@ -52,20 +46,6 @@ const CATALOG_TITLE = "Каталог моделей";
 const ID = "configurator_web_scorm2004";
 const SCHEMA = "adlscorm";
 const SCHEMA_VERSION = "2004 4th Edition";
-
-/* ---------- режим уроков ---------- */
-
-const modeArg = process.argv
-  .slice(2)
-  .find((arg) => arg.startsWith("--lessons="));
-const LESSONS_MODE = modeArg ? modeArg.slice("--lessons=".length) : "params";
-
-if (!["params", "files"].includes(LESSONS_MODE)) {
-  console.error(
-    `Ошибка: --lessons=${LESSONS_MODE}. Допустимо: params или files.`,
-  );
-  process.exit(1);
-}
 
 /* ---------- вспомогательное ---------- */
 
@@ -101,14 +81,12 @@ function buildManifest(files, lessons) {
     .map((file) => `      <file href="${xmlEscape(file)}"/>`)
     .join("\n");
 
-  // В режиме files каждая модель — свой resource, иначе все уроки
-  // ссылаются на один index.html через <parameters>.
-  // Каталог — входная точка курса, отдельный item без параметров: он
-  // открывает SCO без ?lesson=, то есть как «все уроки сразу».
+  // Каталог — входная точка курса: обзор моделей и общий прогресс.
   const catalogResource = `    <resource identifier="res-catalog" type="webcontent" adlcp:scormType="sco" href="index.html">
 ${fileTags}
     </resource>`;
 
+  // Каждый урок — свой SCO: своя оценка, своя запись в журнале LMS.
   const lessonResources = lessons
     .map(
       (lesson, index) => `    <resource identifier="res-lesson-${
@@ -121,41 +99,24 @@ ${fileTags}
     )
     .join("\n");
 
-  const resources =
-    LESSONS_MODE === "files"
-      ? `${catalogResource}\n${lessonResources}`
-      : catalogResource;
-
-  const itemFor = (lesson, index) => {
-    const identifierref =
-      LESSONS_MODE === "files" ? `res-lesson-${index + 1}` : "res-catalog";
-    // В режиме params ресурс общий, различия — в query-строке запуска.
-    const parameters =
-      LESSONS_MODE === "files"
-        ? ""
-        : `\n      <parameters>?lesson=${xmlEscape(lesson.id)}</parameters>`;
-
-    return `      <item identifier="item-lesson-${
-      index + 1
-    }" identifierref="${identifierref}">
-        <title>${xmlEscape(lesson.name)}</title>${parameters}
-      </item>`;
-  };
+  const resources = `${catalogResource}\n${lessonResources}`;
 
   const items = [
     `      <item identifier="item-catalog" identifierref="res-catalog">
         <title>${xmlEscape(CATALOG_TITLE)}</title>
       </item>`,
-    ...lessons.map(itemFor),
+    ...lessons.map(
+      (lesson, index) => `      <item identifier="item-lesson-${
+        index + 1
+      }" identifierref="res-lesson-${index + 1}">
+        <title>${xmlEscape(lesson.name)}</title>
+      </item>`,
+    ),
   ].join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- SCORM 2004 4th Edition Content Package
-     Режим уроков: ${LESSONS_MODE}${
-       LESSONS_MODE === "params"
-         ? " (один SCO, урок передаётся как ?lesson=<id>)"
-         : " (отдельный SCO и href на каждый урок)"
-     } -->
+<!-- SCORM 2004 4th Edition Content Package.
+     Отдельный SCO на каждый пункт меню курса: каталог + уроки. -->
 <manifest identifier="${ID}"
     xmlns="http://www.imsglobal.org/xsd/imscp_v1p1"
     xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"
@@ -233,56 +194,28 @@ if (lessons.length === 0) {
   process.exit(1);
 }
 
-if (LESSONS_MODE === "files") {
-  const missing = lessons
-    .filter((lesson) => !existsSync(join(DIST, `lesson-${lesson.id}.html`)))
-    .map((lesson) => lesson.id);
-  if (missing.length) {
-    console.error(
-      `Ошибка: в dist нет файлов уроков: ${missing.join(", ")}.\n` +
-        "Пересоберите приложение (npm run build).",
-    );
-    process.exit(1);
-  }
+const missing = lessons
+  .filter((lesson) => !existsSync(join(DIST, `lesson-${lesson.id}.html`)))
+  .map((lesson) => lesson.id);
+if (missing.length) {
+  console.error(
+    `Ошибка: в dist нет файлов уроков: ${missing.join(", ")}.\n` +
+      "Пересоберите приложение (npm run build).",
+  );
+  process.exit(1);
 }
 
 console.log("Сканирую собранное приложение...");
-const allFiles = walk(DIST, DIST);
-
-/*
- * В режиме params приложение открывает уроки как index.html?lesson=<id>,
- * поэтому lesson-<id>.html в пакете не нужны. Исключаем их, чтобы на
- * каждую модель в билде не шло лишнего файла. В режиме files они, наоборот,
- * единственная точка входа урока.
- */
-const lessonEntry = /^lesson-[^/]+\.html$/;
-const files =
-  LESSONS_MODE === "params"
-    ? allFiles.filter((file) => !lessonEntry.test(file))
-    : allFiles;
-
-console.log(
-  `Файлов в пакете: ${files.length}, уроков: ${lessons.length}` +
-    (files.length === allFiles.length
-      ? ""
-      : ` (${allFiles.length - files.length} файлов lesson-*.html исключено)`),
-);
+const files = walk(DIST, DIST);
+console.log(`Файлов в пакете: ${files.length}, уроков: ${lessons.length}`);
 
 if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
 console.log("Копирую файлы в scorm-package/ ...");
 cpSync(DIST, OUT, { recursive: true });
-if (LESSONS_MODE === "params") {
-  // cpSync копирует всё; выкидываем то, чего нет в манифесте.
-  for (const file of allFiles) {
-    if (!files.includes(file)) rmSync(join(OUT, file), { force: true });
-  }
-}
 
-console.log(
-  `Генерирую imsmanifest.xml (режим уроков: ${LESSONS_MODE}) ...`,
-);
+console.log("Генерирую imsmanifest.xml ...");
 writeFileSync(
   join(OUT, "imsmanifest.xml"),
   buildManifest(files, lessons),

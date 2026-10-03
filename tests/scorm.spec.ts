@@ -130,28 +130,28 @@ test.describe("навигация каталог ↔ урок", () => {
     expect(page.url()).toContain(`lesson=${LESSON}`);
   });
 
-  test("«в каталог» возвращает к галерее", async ({ page }) => {
+  test("в уроке нет кнопки возврата в каталог", async ({ page }) => {
+    await openScoInLms(page, `/lesson-${LESSON}.html`);
+    const app = page.frameLocator("#sco");
+
+    // Переход к каталогу = смена документа внутри SCO-фрейма = второй
+    // Initialize в одной сессии LMS. HCM после этого считает попытку
+    // закрытой, и уроки перестают открываться. Навигация — меню курса.
+    await expect(app.locator(".lesson-back")).toHaveCount(0);
+    await expect(
+      app.getByRole("button", { name: /каталог/i }),
+    ).toHaveCount(0);
+  });
+
+  test("нет кнопки «Завершить»: результат уходит сам", async ({ page }) => {
     await openScoInLms(page, `/index.html?lesson=${LESSON}`);
     const app = page.frameLocator("#sco");
 
-    await app.locator(".lesson-back").click();
-    await expect(app.locator(".catalog")).toBeVisible();
-    await expect(app.locator(".lesson")).toHaveCount(0);
-  });
-
-  test("в режиме --lessons=files кнопка «в каталог» ведёт на index.html", async ({
-    page,
-  }) => {
-    // SCO открыт как отдельный документ lesson-<id>.html: каталог лежит в
-    // другом документе, и по «текущему пути без query» мы бы остались в
-    // том же уроке.
-    await openScoInLms(page, `/lesson-${LESSON}.html`);
-
-    const back = page.frameLocator("#sco").locator(".lesson-back");
-    await expect(back).toHaveAttribute("href", "/index.html");
-
-    await back.click();
-    await expect(page.frameLocator("#sco").locator(".catalog")).toBeVisible();
+    // Ручная кнопка ставила Terminate посреди работы и замораживала учёт:
+    // задания после неё в отчёт не попадали.
+    await expect(
+      app.getByRole("button", { name: /Завершить/i }),
+    ).toHaveCount(0);
   });
 });
 
@@ -217,40 +217,31 @@ test.describe("учёт заданий", () => {
       .toBeGreaterThan(before);
   });
 
-  test("«завершить» отправляет score, completion, interactions и Terminate", async ({
-    page,
-  }) => {
+  test("уход со страницы закрывает сессию один раз", async ({ page }) => {
     await openScoInLms(page, `/index.html?lesson=${LESSON}`);
-    const app = page.frameLocator("#sco");
-
-    await expect(app.locator(".course-panel")).toBeVisible();
     await expect
-      .poll(async () => (await cmiValues(page))["cmi.suspend_data"], {
+      .poll(async () => (await cmiValues(page))["cmi.interactions._count"], {
         timeout: 60_000,
       })
-      .toContain(LESSON);
-
-    // На уроке панель по умолчанию свёрнута — она лежит поверх сцены.
-    await app.locator(".course-panel__toggle").click();
-    await app.locator(".course-panel__finish").click();
+      .toBeTruthy();
 
     const values = await cmiValues(page);
-    // Открыт один урок из восьми: курс не завершён, результат — suspend.
-    expect(values["cmi.completion_status"]).toBe("incomplete");
-    expect(values["cmi.exit"]).toBe("suspend");
-    expect(values["cmi.success_status"]).toBeTruthy();
-    const raw = Number(values["cmi.score.raw"]);
-    expect(Number.isFinite(raw)).toBe(true);
-    expect(raw).toBeGreaterThanOrEqual(0);
-    expect(raw).toBeLessThan(100);
-    expect(values["cmi.interactions._count"]).toBeTruthy();
     expect(values["cmi.interactions.0.id"]).toBe(`${LESSON}.open`);
+    // Границы оценки объявлены при Initialize, а не после первого задания:
+    // HCM читает их один раз и иначе показывает максимум 0.
+    expect(values["cmi.score.min"]).toBe("0");
+    expect(values["cmi.score.max"]).toBe("100");
+
+    // Сессию закрывает уход из урока, а не кнопка в панели.
+    const sco = scoFrame(page);
+    await sco.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    await expect
+      .poll(async () => await page.evaluate(() => window.__cmiSession.terminated))
+      .toBe(true);
 
     const log = await cmiLog(page);
+    expect(log.filter((e) => e.method === "Terminate")).toHaveLength(1);
     expect(log[log.length - 1]?.method).toBe("Terminate");
-    expect(await page.evaluate(() => window.__cmiSession.terminated)).toBe(
-      true,
-    );
   });
 });
 

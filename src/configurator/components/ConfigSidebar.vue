@@ -2,8 +2,18 @@
   <div id="configurator-sidebar" class="configurator-sidebar">
     <div class="sidebar-header">
       <h2>{{ props.title ?? 'Конфигуратор' }}</h2>
-      <BaseButton variant="secondary" @click="$emit('back')">
-        {{ props.backLabel ?? '← Назад к выбору' }}
+      <!--
+        Кнопка возврата скрывается пустым backLabel. В SCO её быть не
+        должно: переход к каталогу означает смену документа внутри
+        SCO-фрейма, то есть второй Initialize в одной сессии LMS — после
+        этого LMS считает попытку закрытой.
+      -->
+      <BaseButton
+        v-if="props.backLabel"
+        variant="secondary"
+        @click="$emit('back')"
+      >
+        {{ props.backLabel }}
       </BaseButton>
     </div>
 
@@ -174,7 +184,10 @@ interface Props {
   showLightHelper?: boolean;
   /** Заголовок панели (в уроках — название модели). */
   title?: string;
-  /** Подпись кнопки возврата (в уроках — «в каталог»). */
+  /**
+   * Подпись кнопки возврата. Пустая строка — кнопки нет; по умолчанию
+   * тоже нет: возврат к каталогу внутри SCO ломает сессию LMS.
+   */
   backLabel?: string;
 }
 

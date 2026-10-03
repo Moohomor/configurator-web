@@ -89,7 +89,19 @@ export class Scorm2004Runtime extends BaseRuntime
   }
 
   override start(): void {
-    this.session.initialize();
+    if (!this.session.initialize()) return;
+
+    /*
+     * Границы оценки объявляем сразу при Initialize. Часть LMS (HCM в том
+     * числе) читает cmi.score.min/max один раз — при первом обращении к
+     * score, — и если в этот момент их ещё нет, показывает «0/0» до конца
+     * сессии. Мы узнаём оценку только после первого задания, а к этому
+     * моменту LMS уже решила, что максимум равен нулю.
+     */
+    this.session.writeScore(0, 0, 100);
+    this.session.set("cmi.completion_status", "incomplete");
+    this.session.set("cmi.success_status", "unknown");
+    this.session.commit();
   }
 
   readState<T>(fallback: T): T {

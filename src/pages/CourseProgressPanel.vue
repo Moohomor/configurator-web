@@ -102,19 +102,17 @@
         </ul>
       </div>
 
+      <!--
+    Кнопки «Завершить» здесь нет намеренно. Результат уходит в LMS сам, на
+    каждое выполненное задание (LearningRuntime.report), а сессию закрывает
+    LMS сама, когда обучающий уходит из урока. Ручная кнопка была вредной:
+    она ставила Terminate посреди работы и замораживала учёт — задания,
+    выполненные после неё, уже не попадали в отчёт.
+  -->
       <footer class="course-panel__foot">
         <p class="course-panel__runtime">{{ runtimeLabel }}</p>
-        <button
-          v-if="!reported"
-          class="course-panel__finish"
-          type="button"
-          @click="onFinish"
-        >
-          Завершить и отправить результат
-        </button>
-        <p v-else class="course-panel__reported">
-          Результат{{ reportedToLms ? " передан в систему обучения" : " сформирован" }}:
-          {{ lastResult?.score }}%
+        <p class="course-panel__note">
+          Результат сохраняется автоматически при каждом выполненном задании.
         </p>
       </footer>
     </div>
@@ -137,9 +135,6 @@ const visible = ref(true);
 const collapsed = ref(false);
 
 const score = props.tracker.score;
-const reported = props.tracker.reported;
-const lastResult = props.tracker.lastResult;
-const reportedToLms = props.tracker.reportedToLms;
 
 const lessons = props.tracker.lessons;
 
@@ -153,10 +148,6 @@ const currentLesson = computed(() => {
 const otherLessons = computed(() =>
   lessons.filter((lesson) => lesson.id !== currentLesson.value?.id),
 );
-
-function onFinish(): void {
-  props.tracker.finish();
-}
 
 // Панель живёт дольше, чем страница: переходы «каталог ↔ урок» её не
 // пересоздают. Сворачиваем её на уроке — там полоса с заданиями мешает

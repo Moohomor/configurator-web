@@ -2,10 +2,14 @@
      трекер (src/scorm), сюда он попадает через события конфигуратора. -->
 <template>
   <div class="lesson">
+    <!--
+      Кнопки «к каталогу» здесь нет намеренно. В режиме --lessons=files
+      каталог лежит в другом HTML-документе, и переход к нему из SCO —
+      это перезагрузка документа внутри фрейма, то есть второй
+      Initialize в одной сессии LMS. После этого LMS считает попытку
+      закрытой и уроки перестают открываться. Навигация — меню курса.
+    -->
     <header class="lesson-bar">
-      <a class="lesson-back" :href="catalogHref()" @click.prevent="onBack">
-        ← Каталог моделей
-      </a>
       <h1 class="lesson-title">{{ model.name }}</h1>
     </header>
 
@@ -23,13 +27,11 @@
           :light-position="light"
           :show-light-helper="showLightHelper"
           :title="model.name"
-          back-label="← В каталог моделей"
           @select-part="selectPart"
           @select-texture-pack="selectTexturePack"
           @toggle-visibility="togglePartVisibility"
           @hide-all="() => setAllVisible(false)"
           @show-all="() => setAllVisible(true)"
-          @back="onBack"
           @reset="resetConfiguration"
           @light-position-change="updateLightPosition"
           @light-helper-toggle="showLightHelper = $event"
@@ -218,7 +220,6 @@ import ModelInfoPanel from "@/configurator/components/ModelInfoPanel.vue";
 import { useConfigurator } from "@/configurator/composables/useConfigurator";
 import type { ConfiguratorEventHandler } from "@/configurator/events";
 import type { Model } from "@/configurator/types/models";
-import { catalogHref, goToCatalog } from "@/scorm/lesson";
 import type { LessonTracker } from "@/scorm/tracker";
 
 /**
@@ -286,10 +287,6 @@ const {
   resetConfiguration,
   toggleFocusMode,
 } = useConfigurator({ model: props.model, onEvent: onConfiguratorEvent });
-
-function onBack(): void {
-  goToCatalog();
-}
 
 // Заголовок вкладки/фрейма в LMS: имя урока, а не «Конфигуратор».
 onMounted(() => {

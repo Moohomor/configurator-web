@@ -93,16 +93,25 @@ export function onRouteChange(listener: RouteListener): () => void {
   return () => listeners.delete(listener);
 }
 
+/**
+ * Переход внутри текущего документа — только через pushState.
+ *
+ * `window.location.href` здесь недопустим: смена документа внутри
+ * SCO-фрейма перезагружает приложение, а новая загрузка зовёт
+ * Initialize второй раз в одной сессии LMS. Для SCORM это нарушение
+ * протокола: HCM после такого считает попытку закрытой и уроки
+ * перестают открываться. Смена урока — только меню курса.
+ */
 function navigate(lessonId: string | null): void {
   const target = buildHref(lessonId);
 
-  // В режиме --lessons=files смена урока означает смену документа SCO:
-  // другого способа перейти в каталог просто нет. Reload здесь законен —
-  // это отдельная SCO-сессия, а не второй Initialize в одной.
   const currentDocument = new URL(window.location.href).pathname;
   const targetDocument = target.split("?")[0] ?? target;
   if (currentDocument !== targetDocument) {
-    window.location.href = target;
+    console.warn(
+      "[курс] переход между документами внутри SCO запрещён: это дало бы " +
+        "второй Initialize. Открывайте уроки из меню курса.",
+    );
     return;
   }
 
@@ -114,8 +123,6 @@ function navigate(lessonId: string | null): void {
   if (window.history?.pushState) {
     window.history.pushState({ lesson: lessonId }, "", target);
     notify();
-  } else {
-    window.location.href = target;
   }
 }
 
