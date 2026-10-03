@@ -96,34 +96,44 @@
         });
       }
 
-      // Список уроков берём из собранного каталога: те же источники правды,
-      // что у сборки и упаковщика.
       var SCO_ROOT = "/dist/index.html";
-      var LESSONS = [
-        "loco-ep20", "loco-tem23", "metro-moscow-2020", "ed4m_car",
-        "train-ivolga-3", "reductor", "sa-3", "truck"
-      ];
-
       var select = document.getElementById("sco-select");
-      var lessonOpt = document.createElement("optgroup");
-      lessonOpt.label = "Уроки (?lesson=)";
-      LESSONS.forEach(function (id) {
-        var opt = document.createElement("option");
-        opt.value = SCO_ROOT + "?lesson=" + id;
-        opt.textContent = "Урок: " + id;
-        lessonOpt.appendChild(opt);
-      });
-      select.appendChild(lessonOpt);
 
-      var filesOpt = document.createElement("optgroup");
-      filesOpt.label = "Уроки (lesson-<id>.html, режим --lessons=files)";
-      LESSONS.forEach(function (id) {
-        var opt = document.createElement("option");
-        opt.value = "/dist/lesson-" + id + ".html";
-        opt.textContent = "Урок: " + id;
-        filesOpt.appendChild(opt);
-      });
-      select.appendChild(filesOpt);
+      // Уроки читаем из src/catalog/models.json — того же источника, что
+      // сборка и упаковщик. Захардкоженный список молча устаревал бы при
+      // добавлении модели.
+      function fillLessons(lessons) {
+        var filesOpt = document.createElement("optgroup");
+        filesOpt.label = "Уроки (lesson-<id>.html) — так они идут в курсе";
+        lessons.forEach(function (lesson) {
+          var opt = document.createElement("option");
+          opt.value = "/dist/lesson-" + lesson.id + ".html";
+          opt.textContent = lesson.name;
+          filesOpt.appendChild(opt);
+        });
+        select.appendChild(filesOpt);
+
+        var paramsOpt = document.createElement("optgroup");
+        paramsOpt.label = "Уроки (?lesson=) — только для проверки вне LMS";
+        lessons.forEach(function (lesson) {
+          var opt = document.createElement("option");
+          opt.value = SCO_ROOT + "?lesson=" + lesson.id;
+          opt.textContent = lesson.name;
+          paramsOpt.appendChild(opt);
+        });
+        select.appendChild(paramsOpt);
+      }
+
+      fetch("/src/catalog/models.json")
+        .then(function (r) { return r.json(); })
+        .then(function (records) {
+          fillLessons(records.filter(function (m) { return Boolean(m.path); }));
+        })
+        .catch(function () {
+          var li = document.createElement("li");
+          li.textContent = "не удалось прочитать src/catalog/models.json";
+          document.getElementById("state").prepend(li);
+        });
 
       select.addEventListener("change", function () {
         data = {};
