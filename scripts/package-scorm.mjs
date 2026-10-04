@@ -165,8 +165,8 @@ ${fileTags}
     </imsmd:lom>
   </metadata>
 
-  <organizations default="org-main">
-    <organization identifier="org-main">
+  <organizations default="tmh-3d-configurator">
+    <organization identifier="tmh-3d-configurator">
       <title>${xmlEscape(TITLE)}</title>
 ${items}
     </organization>
