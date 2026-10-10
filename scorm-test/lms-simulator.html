@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>SCORM 2004 LMS Simulator</title>
+  <style>
+    body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f0f3f6; }
+    header { background: #1a1d2e; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+    header h1 { font-size: 16px; margin: 0; }
+    button { border: none; background: #3b82f6; color: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+    #sco-wrap { padding: 8px 8px 0; }
+    iframe { width: 100%; height: 62vh; border: 2px solid #3b82f6; border-radius: 8px; background: #fff; }
+    #state { padding: 10px 16px; }
+    #state h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #4b5563; margin: 10px 0 6px; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; background: #fff; border-radius: 6px; overflow: hidden; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 4px 8px; text-align: left; }
+    th { background: #eef2f7; }
+    .ok { background: #ecfdf5; color: #065f46; font-weight: 600; }
+    .bad { background: #fff1f2; color: #9f1239; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LMS Simulator (имитация API_1484_11, SCORM 2004)</h1>
+    <label>Точка входа SCO:
+      <select id="sco-select">
+        <option value="/dist/index.html">Каталог (index.html)</option>
+      </select>
+    </label>
+    <button id="relaunch">Перезапустить SCO</button>
+  </header>
+  <div id="sco-wrap">
+    <iframe id="sco" src="/dist/index.html"></iframe>
+  </div>
+  <div id="state">
+    <h2>Данные, записанные SCO в LMS</h2>
+    <table id="tbl">
+      <thead><tr><th>Элемент данных</th><th>Значение</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h2>Журнал вызовов API</h2>
+    <table id="log">
+      <thead><tr><th>#</th><th>Вызов</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <script>
+    (function () {
+      var data = {};          // cmi.* -> value
+      var calls = [];         // log
+      var lastError = "0";
+
+      function pushLog(msg) { calls.push(msg); }
+
+      window.API_1484_11 = {
+        Initialize: function (p) { pushLog("Initialize(" + p + ")"); return "true"; },
+        Terminate: function (p) { pushLog("Terminate(" + p + ")"); return "true"; },
+        Commit: function (p) { pushLog("Commit(" + p + ")"); return "true"; },
+        GetValue: function (n, p) {
+          lastError = "0";
+          pushLog("GetValue(" + n + ")");
+          return data[n] === undefined ? "" : String(data[n]);
+        },
+        SetValue: function (n, v, p) {
+          lastError = "0";
+          data[n] = String(v);
+          pushLog(n + " = " + v + "  [" + p + "]");
+          render();
+          return "true";
+        },
+        GetLastError: function () { return lastError; },
+        GetErrorString: function () { return "No error"; },
+        GetDiagnostic: function () { return "No diagnostic"; }
+      };
+
+      function render() {
+        var tbody = document.querySelector("#tbl tbody");
+        tbody.innerHTML = "";
+        Object.keys(data).sort().forEach(function (k) {
+          var tr = document.createElement("tr");
+          var td1 = document.createElement("td"); td1.textContent = k;
+          var td2 = document.createElement("td"); td2.textContent = data[k];
+          var is = k.indexOf(".result") !== -1;
+          td2.className = data[k] === "correct" || k === "cmi.success_status" && data[k] === "passed" ? "ok" : "";
+          tr.appendChild(td1); tr.appendChild(td2);
+          tbody.appendChild(tr);
+        });
+        var ltbody = document.querySelector("#log tbody");
+        ltbody.innerHTML = "";
+        calls.forEach(function (c, i) {
+          var tr = document.createElement("tr");
+          var td1 = document.createElement("td"); td1.textContent = i + 1;
+          var td2 = document.createElement("td"); td2.textContent = c;
+          tr.appendChild(td1); tr.appendChild(td2);
+          ltbody.appendChild(tr);
+        });
+      }
+
+      var SCO_ROOT = "/dist/index.html";
+      var select = document.getElementById("sco-select");
+
+      // Уроки читаем из src/catalog/models.json — того же источника, что
+      // сборка и упаковщик. Захардкоженный список молча устаревал бы при
+      // добавлении модели.
+      function fillLessons(lessons) {
+        var filesOpt = document.createElement("optgroup");
+        filesOpt.label = "Уроки (lesson-<id>.html) — так они идут в курсе";
+        lessons.forEach(function (lesson) {
+          var opt = document.createElement("option");
+          opt.value = "/dist/lesson-" + lesson.id + ".html";
+          opt.textContent = lesson.name;
+          filesOpt.appendChild(opt);
+        });
+        select.appendChild(filesOpt);
+
+        var paramsOpt = document.createElement("optgroup");
+        paramsOpt.label = "Уроки (?lesson=) — только для проверки вне LMS";
+        lessons.forEach(function (lesson) {
+          var opt = document.createElement("option");
+          opt.value = SCO_ROOT + "?lesson=" + lesson.id;
+          opt.textContent = lesson.name;
+          paramsOpt.appendChild(opt);
+        });
+        select.appendChild(paramsOpt);
+      }
+
+      fetch("/src/catalog/models.json")
+        .then(function (r) { return r.json(); })
+        .then(function (records) {
+          fillLessons(records.filter(function (m) { return Boolean(m.path); }));
+        })
+        .catch(function () {
+          var li = document.createElement("li");
+          li.textContent = "не удалось прочитать src/catalog/models.json";
+          document.getElementById("state").prepend(li);
+        });
+
+      select.addEventListener("change", function () {
+        data = {};
+        calls = [];
+        render();
+        document.getElementById("sco").src = select.value;
+      });
+
+      document.getElementById("relaunch").addEventListener("click", function () {
+        // Данные не сбрасываем: так видно, что прогресс читается из
+        // suspend_data при повторном запуске SCO.
+        document.getElementById("sco").src = select.value;
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>
