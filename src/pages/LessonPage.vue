@@ -9,7 +9,7 @@
       Initialize в одной сессии LMS. После этого LMS считает попытку
       закрытой и уроки перестают открываться. Навигация — меню курса.
     -->
-    <header class="lesson-bar">
+    <header v-if="!viewer" class="lesson-bar">
       <h1 class="lesson-title">{{ model.name }}</h1>
     </header>
 
@@ -233,6 +233,9 @@ const ModelViewer = defineAsyncComponent(
 const props = defineProps<{
   model: Model;
   tracker: LessonTracker;
+  /** Лёгкий вьюер (embed-<id>.html): шапка урока скрыта — вставка в
+   *  чужой курс работает как картинка, без лишнего chrome. */
+  viewer?: boolean;
 }>();
 
 /** Мост «события 3D-конфигуратора → задания курса». Здесь нет ни CSS-классов,

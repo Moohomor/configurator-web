@@ -75,6 +75,14 @@ test.describe("прямая ссылка на урок", () => {
       const response = await page.request.get(`/lesson-${id}.html`);
       expect(response.status(), `lesson-${id}.html`).toBe(200);
       expect(await response.text()).toContain(`"id":"${id}"`);
+
+      // Страница для вставки в сторонний курс: тот же урок с
+      // __VIEWER__, из-за которого скрыты шапка и панель заданий.
+      const embed = await page.request.get(`/embed-${id}.html`);
+      expect(embed.status(), `embed-${id}.html`).toBe(200);
+      const embedHtml = await embed.text();
+      expect(embedHtml).toContain(`"id":"${id}"`);
+      expect(embedHtml).toContain("__VIEWER__");
     }
   });
 });
@@ -262,5 +270,87 @@ test.describe("автономный режим", () => {
         { timeout: 60_000 },
       )
       .toContain(LESSON);
+  });
+});
+
+test.describe("встраивание в сторонний курс", () => {
+  test("embed-<id>.html не инициализирует чужую сессию LMS", async ({
+    page,
+  }) => {
+    // Открыто внутри LMS с API_1484_11 — как в SCO чужого курса.
+    // Вставка не имеет права трогать чужую сессию: Initialize поверх
+    // чужого Initialize нарушает протокол, и LMS считает попытку
+    // закрытой — чужой курс ломается из-за нашей вставки.
+    await openScoInLms(page, `/embed-${LESSON}.html`);
+    const app = page.frameLocator("#sco");
+
+    await expect(app.locator(".lesson")).toBeVisible();
+    // Лёгкий вьюер «посреди текста»: без шапки урока и без панели заданий.
+    await expect(app.locator(".lesson-title")).toHaveCount(0);
+    await expect(app.locator(".course-panel")).toHaveCount(0);
+
+    // Отметки вьюера не должны всплыть в полном lesson-<id>.html: вьюер
+    // вставлен «картинкой», заданий там не видно, а общий ключ отдал бы
+    // соседнему уроку уже выполненные задания.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(
+            () =>
+              localStorage.getItem("configurator:embed-viewer-progress") ?? "",
+          ),
+        { timeout: 60_000 },
+      )
+      .toContain(LESSON);
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("configurator:embed-progress"),
+      ),
+    ).toBeNull();
+
+    // Проверка API — ПОСЛЕ загрузки сцены: именно на этом трекер
+    // отмечает model-loaded, и именно эти невидимые отметки могли бы
+    // уйти в чужую сессию. Проверка до poll ничего бы не доказывала:
+    // модель к этому моменту ещё не разобрана.
+    expect(await page.evaluate(() => window.__cmiSession.initialized)).toBe(
+      false,
+    );
+    const log = await cmiLog(page);
+    expect(log.filter((e) => e.method === "Initialize")).toHaveLength(0);
+    expect(log.filter((e) => e.method === "SetValue")).toHaveLength(0);
+  });
+
+  test("полный урок с ?embed=1: целиком, но без SCORM и со своим ключом", async ({
+    page,
+  }) => {
+    await openScoInLms(page, `/lesson-${LESSON}.html?embed=1`);
+    const app = page.frameLocator("#sco");
+
+    // Полный урок как обычно — шапка и панель заданий на месте.
+    await expect(app.locator(".lesson-title")).toContainText(LESSON_TITLE);
+    await expect(app.locator(".course-panel")).toBeVisible();
+    await expect(app.locator(".course-panel__runtime")).toContainText(
+      "Встроенный режим",
+    );
+
+    // Прогресс идёт в отдельный ключ localStorage и не смешивается ни
+    // с SCORM-курсом, ни с локальным режимом разработки.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(
+            () => localStorage.getItem("configurator:embed-progress") ?? "",
+          ),
+        { timeout: 60_000 },
+      )
+      .toContain(LESSON);
+
+    // Ни одного обращения к API — ни до загрузки модели, ни после.
+    expect(await page.evaluate(() => window.__cmiSession.initialized)).toBe(
+      false,
+    );
+    const log = await cmiLog(page);
+    expect(log.filter((e) => e.method === "Initialize")).toHaveLength(0);
+    expect(log.filter((e) => e.method === "SetValue")).toHaveLength(0);
   });
 });

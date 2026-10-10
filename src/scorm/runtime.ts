@@ -2,7 +2,10 @@
  * scorm/runtime.ts
  * Реализации LearningRuntime:
  *   Scorm2004Runtime — работа с LMS через API_1484_11;
- *   LocalRuntime     — автономный режим (dev/превью без LMS).
+ *   LocalRuntime     — автономный режим (dev/превью без LMS);
+ *   EmbedRuntime     — встроен в сторонний курс: SCORM API не трогается
+ *                      вообще, прогресс живёт в отдельном ключе
+ *                      localStorage (выбор — в main.ts по embedMode).
  *
  * Приложение работает только с интерфейсом, поэтому наличие или
  * отсутствие LMS нигде не проверяется.
@@ -17,6 +20,7 @@ import {
   formatDuration,
   Scorm2004Session,
 } from "./scorm2004";
+import type { EmbedMode } from "./lesson";
 
 /**
  * События, на которых SCO реально покидают.
@@ -179,22 +183,27 @@ export class Scorm2004Runtime extends BaseRuntime
   }
 }
 
-const LOCAL_STATE_KEY = "configurator:course-progress";
-
-/** Автономный режим: без LMS, но с тем же интерфейсом. Прогресс живёт
- *  в localStorage, интеракции — в консоли. Используется в dev и превью. */
-export class LocalRuntime extends BaseRuntime implements LearningRuntime {
-  readonly kind = "local" as const;
-  readonly inLms = false;
-  readonly label = "Конфигуратор запущен вне LMS — результат не сохраняется";
-
-  override start(): void {
-    /* сессии нет */
+/**
+ * Режимы без SCORM-сессии: прогресс в localStorage, интеракции — в консоли.
+ *
+ * Общая часть `LocalRuntime` и `EmbedRuntime`: они различаются только
+ * `kind`, `label`, ключом хранения и префиксом сообщения. Отдельные классы
+ * (а не один с флагом) — потому что у них разный смысл: LocalRuntime
+ * отвечает за себя, EmbedRuntime запрещён трогать чужую сессию.
+ */
+abstract class BrowserStorageRuntime extends BaseRuntime {
+  constructor(
+    /** Ключ localStorage, в котором живёт прогресс этого режима. */
+    protected readonly stateKey: string,
+    /** Префикс сообщения об итоге — чтобы в консоли было видно, кто пишет. */
+    private readonly logTag: string,
+  ) {
+    super();
   }
 
   readState<T>(fallback: T): T {
     try {
-      const raw = localStorage.getItem(LOCAL_STATE_KEY);
+      const raw = localStorage.getItem(this.stateKey);
       return raw ? (JSON.parse(raw) as T) : fallback;
     } catch {
       return fallback;
@@ -203,7 +212,7 @@ export class LocalRuntime extends BaseRuntime implements LearningRuntime {
 
   writeState(json: string): void {
     try {
-      localStorage.setItem(LOCAL_STATE_KEY, json);
+      localStorage.setItem(this.stateKey, json);
     } catch {
       /* приватный режим браузера — не критично */
     }
@@ -212,7 +221,7 @@ export class LocalRuntime extends BaseRuntime implements LearningRuntime {
   finish(result: LessonResult): boolean {
     const done = this.interactions.filter((i) => i.result === "correct").length;
     console.info(
-      `[курс] итог: ${result.score}% — ${result.success}/${result.completion}; ` +
+      `[${this.logTag}] итог: ${result.score}% — ${result.success}/${result.completion}; ` +
         `выполнено заданий: ${done} из ${this.interactions.length}`,
     );
     return true;
@@ -222,6 +231,79 @@ export class LocalRuntime extends BaseRuntime implements LearningRuntime {
     /* прогресс и так в localStorage, отправлять некуда */
     return true;
   }
+}
+
+const LOCAL_STATE_KEY = "configurator:course-progress";
+
+/** Автономный режим: без LMS, но с тем же интерфейсом. Прогресс живёт
+ *  в localStorage, интеракции — в консоли. Используется в dev и превью. */
+export class LocalRuntime extends BrowserStorageRuntime implements LearningRuntime {
+  readonly kind = "local" as const;
+  readonly inLms = false;
+  readonly label = "Конфигуратор запущен вне LMS — результат не сохраняется";
+
+  constructor() {
+    super(LOCAL_STATE_KEY, "курс");
+  }
+
+  override start(): void {
+    /* сессии нет */
+  }
+}
+
+/**
+ * Режим встраивания в сторонний SCORM-курс.
+ *
+ * Функционально это LocalRuntime с отдельным ключом localStorage, но
+ * класс самостоятельный (не наследник LocalRuntime): у `kind` и `label`
+ * здесь свои значения, а три runtime в этом файле и так независимы друг
+ * от друга. Хранилище и вывод в консоль — с общим BrowserStorageRuntime.
+ *
+ * Главное — то, чего в классе нет: этот runtime **никогда** не ищет
+ * `API_1484_11` и не вызывает Initialize/Terminate. Встроенный фрейм
+ * лежит внутри SCO чужого курса, и наш Initialize сверху чужого —
+ * нарушение протокола, после которого LMS считает попытку закрытой и
+ * чужой курс ломается. Выбирается только по явному признаку
+ * встраивания (см. embedMode в scorm/lesson.ts), а не по наличию API.
+ */
+const EMBED_STATE_KEY = "configurator:embed-progress";
+
+/**
+ * Ключ прогресса лёгкого вьюера (embed-<id>.html).
+ *
+ * Отдельный намеренно: вьюер вставляется в чужой курс «картинкой посреди
+ * текста» и отметки о выполнении заданий там не видны — панели заданий
+ * нет. Но трекер всё равно работает, и на общем ключе его отметки
+ * (загрузка модели, выбор детали) потом всплыли бы в полном
+ * lesson-<id>.html как «уже выполненные задания» — обучающий открывал бы
+ * урок сразу готовым. Своим ключом вьюер ничего не портит соседним
+ * урокам.
+ */
+const EMBED_VIEWER_STATE_KEY = "configurator:embed-viewer-progress";
+
+export class EmbedRuntime extends BrowserStorageRuntime implements LearningRuntime {
+  readonly kind = "embed" as const;
+  readonly inLms = false;
+  readonly label =
+    "Встроенный режим: результат сохраняется в этом браузере, в LMS не передаётся";
+
+  constructor(stateKey: string = EMBED_STATE_KEY) {
+    super(stateKey, "вставка");
+  }
+
+  override start(): void {
+    /* сессии нет: чужой SCORM API не трогаем никогда */
+  }
+}
+
+/**
+ * Реализация по режиму встраивания. Выбор делается в composition root до
+ * всякого поиска `API_1484_11` (см. main.ts).
+ */
+export function createEmbedRuntime(mode: EmbedMode): EmbedRuntime {
+  return new EmbedRuntime(
+    mode === "viewer" ? EMBED_VIEWER_STATE_KEY : EMBED_STATE_KEY,
+  );
 }
 
 /**

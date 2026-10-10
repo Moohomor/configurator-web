@@ -8,7 +8,8 @@
     "typecheck": "vue-tsc --noEmit",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "build:scorm": "npm run build && node scripts/package-scorm.mjs",
+    "build:scorm": "npm run build && node scripts/package-scorm.mjs scorm",
+    "build:embed": "npm run build && node scripts/package-scorm.mjs embed",
     "test": "playwright test"
   },
   "dependencies": {

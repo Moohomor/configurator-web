@@ -1,16 +1,17 @@
 /* =====================================================================
  * scorm/lesson.ts
- * Роутинг «каталог ↔ урок» и граница ответственности SCO.
+ * Роутинг «каталог ↔ урок», граница ответственности SCO и режим
+ * встраивания в сторонний курс (embedMode).
  *
  * Два способа попасть на урок, оба поддерживаются всегда:
  *   ?lesson=<id>            — LMS поддержала <parameters> в манифесте
  *                             (штатный режим упаковки);
- *   window.__LESSON__ = {…} — встроено в сгенерированный lesson-<id>.html
- *                             (режим --lessons=files).
+ *   window.__LESSON__ = {…} — встроено в сгенерированные lesson-<id>.html
+ *                             и embed-<id>.html.
  *
  * Переходы внутри приложения делаются через history.pushState, без
  * перезагрузки: перезагрузка SCO вызвала бы второй Initialize в той же
- * сессии LMS.
+ * сессии LMS (в режиме embed этой сессии нет — см. navigate).
  * ===================================================================== */
 import type { LessonScope } from "./lessons";
 
@@ -22,6 +23,11 @@ declare global {
   interface Window {
     /** Вставляется в lesson-<id>.html плагином сборки. */
     __LESSON__?: InjectedLesson;
+    /** Вставлено в embed-<id>.html: лёгкий вьюер без chrome урока. */
+    __VIEWER__?: boolean;
+    /** Вставлено упаковщиком в контент-zip: страница из контентного
+     *  пакета для стороннего курса, SCORM API трогать нельзя. */
+    __CONTENT_EMBED__?: boolean;
   }
 }
 
@@ -32,6 +38,29 @@ function search(): URLSearchParams {
 /** id урока, заданный при открытии SCO, иначе null (каталог). */
 export function currentLessonId(): string | null {
   return window.__LESSON__?.id ?? search().get("lesson") ?? null;
+}
+
+/**
+ * Режим встраивания в сторонний SCORM-курс.
+ *
+ *   "viewer" — embed-<id>.html: лёгкий вьюер «посреди текста»,
+ *              без шапки урока и без панели заданий;
+ *   "lesson" — полный урок/каталог из контент-zip (флаг вшит в HTML)
+ *              или любая страница с ?embed=1;
+ *   null     — обычная работа: в LMS это SCO, вне LMS — dev/превью.
+ *
+ * Признак явный и не выводится из наличия API_1484_11: встроенный фрейм
+ * всегда лежит внутри SCO чужого курса, и «нашли API» означает «нашли
+ * ЧУЖУЮ сессию» — инициализировать её нашим Initialize нельзя.
+ */
+export type EmbedMode = "viewer" | "lesson";
+
+export function embedMode(): EmbedMode | null {
+  if (window.__VIEWER__) return "viewer";
+  if (window.__CONTENT_EMBED__) return "lesson";
+  const raw = search().get("embed");
+  if (raw === null || raw === "0" || raw === "false") return null;
+  return raw === "viewer" ? "viewer" : "lesson";
 }
 
 /**
@@ -101,6 +130,17 @@ export function onRouteChange(listener: RouteListener): () => void {
  * Initialize второй раз в одной сессии LMS. Для SCORM это нарушение
  * протокола: HCM после такого считает попытку закрытой и уроки
  * перестают открываться. Смена урока — только меню курса.
+ *
+ * В режиме встраивания запрет снимается: там сессии нет (EmbedRuntime
+ * не вызывает Initialize), поэтому смена документа безопасна.
+ *
+ * Сейчас эта ветка недостижима из UI: `goToCatalog` не вызывается ни
+ * откуда, а кнопки возврата в каталог в уроке нет, так что `navigate`
+ * всегда вызывается из каталога, где документ один и тот же. Ветка
+ * оставлена как страховка: если урок или каталог в контент-пакете
+ * всё-таки смогут уйти в другой документ, переход должен состояться
+ * (вне SCORM второй Initialize невозможен), а не молча превратиться
+ * в console.warn и нерабочую ссылку.
  */
 function navigate(lessonId: string | null): void {
   const target = buildHref(lessonId);
@@ -108,6 +148,10 @@ function navigate(lessonId: string | null): void {
   const currentDocument = new URL(window.location.href).pathname;
   const targetDocument = target.split("?")[0] ?? target;
   if (currentDocument !== targetDocument) {
+    if (embedMode()) {
+      window.location.href = target;
+      return;
+    }
     console.warn(
       "[курс] переход между документами внутри SCO запрещён: это дало бы " +
         "второй Initialize. Открывайте уроки из меню курса.",

@@ -52,11 +52,13 @@ export interface LessonResult {
 
 /**
  * Всё, что нужно приложению от системы обучения.
- * Реализации: Scorm2004Runtime (в LMS) и LocalRuntime (вне LMS).
+ * Реализации: Scorm2004Runtime (в LMS), LocalRuntime (вне LMS) и
+ * EmbedRuntime (встроенный в чужой курс — API LMS не трогается вообще).
  */
 export interface LearningRuntime {
-  /** "scorm" — работаем с LMS, "local" — автономный режим. */
-  readonly kind: "scorm" | "local";
+  /** "scorm" — работаем с LMS, "local" — автономный режим,
+   *  "embed" — встроен в сторонний курс, прогресс только в браузере. */
+  readonly kind: "scorm" | "local" | "embed";
   /** Человеческое описание режима — для панели прогресса. */
   readonly label: string;
   /** Открыть сессию (SCORM Initialize). Идемпотентно. */

@@ -25,7 +25,9 @@ dist-ssr
 
 # SCORM package build output
 scorm-package/
+content-package/
 configurator-web-scorm2004.zip
+configurator-content.zip
 *.zip
 
 # Playwright

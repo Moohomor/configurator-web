@@ -33,8 +33,11 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Package SCORM
-        run: node scripts/package-scorm.mjs
+      # Режим all: оба пакета из одного dist. Эквивалентен двум
+      # отдельным вызовам (scorm, затем embed) и заодно покрывает
+      # сам режим all — иначе он остался бы без проверки в CI.
+      - name: Package SCORM and embed content
+        run: node scripts/package-scorm.mjs all
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -43,6 +46,7 @@ jobs:
           path: |
             dist
             configurator-web-scorm2004.zip
+            configurator-content.zip
           retention-days: 7
 
   e2e:

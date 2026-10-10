@@ -6,14 +6,25 @@
     <p v-if="loadError" class="app__message">{{ loadError }}</p>
     <p v-else-if="!tracker" class="app__message">Загрузка каталога моделей…</p>
     <template v-else>
-      <LessonPage v-if="model" :key="model.id" :model="model" :tracker="tracker" />
+      <LessonPage
+        v-if="model"
+        :key="model.id"
+        :model="model"
+        :tracker="tracker"
+        :viewer="viewer"
+      />
       <CatalogPage
         v-else
         :models="models"
         :tracker="tracker"
         :links-enabled="linksEnabled"
       />
+      <!--
+        Лёгкий вьюер вставляется в чужой курс «как картинка»: без шапки
+        урока и без панели заданий — там их не видно и не за чем.
+      -->
       <CourseProgressPanel
+        v-if="!viewer"
         :class="{ 'course-panel--inline': view === 'catalog' }"
         :tracker="tracker"
         :runtime-label="runtime.label"
@@ -37,7 +48,12 @@ import CourseProgressPanel from "@/pages/CourseProgressPanel.vue";
 import LessonPage from "@/pages/LessonPage.vue";
 import type { LearningRuntime, ModelCatalogSource } from "@/api/types";
 import type { Model } from "@/configurator/types/models";
-import { currentLessonId, currentScope, onRouteChange } from "@/scorm/lesson";
+import {
+  currentLessonId,
+  currentScope,
+  embedMode,
+  onRouteChange,
+} from "@/scorm/lesson";
 import { lessonsOf } from "@/scorm/lessons";
 import { createTracker, type LessonTracker } from "@/scorm/tracker";
 
@@ -77,6 +93,9 @@ const view = computed(() => (model.value ? "lesson" : "catalog"));
  * галереей можно пользоваться без LMS.
  */
 const linksEnabled = computed(() => props.runtime.kind !== "scorm");
+
+/** Лёгкий вьюер для вставки в сторонний курс (embed-<id>.html). */
+const viewer = embedMode() === "viewer";
 
 /** Все уроки каталога (модели с 3D). */
 const lessons = computed(() => lessonsOf(models.value));

@@ -14,6 +14,7 @@ npm.cmd run typecheck  # vue-tsc --noEmit
 npm.cmd run build      # уже включает typecheck — отдельно звать не надо
 npm.cmd run preview
 npm.cmd run build:scorm   # build + упаковка SCORM
+npm.cmd run build:embed   # build + контент-пакет для чужого курса
 npm.cmd test                # Playwright, ~3 мин
 ```
 
@@ -56,7 +57,7 @@ public/       models/, tmh-previews/ — копируются в dist как е�
   для TS — в `scripts/catalog.d.mts`. Превратишь в `.ts` — упаковщик начнёт
   требовать `--experimental-strip-types`.
 
-## Четыре запрета, которые ломаются молча
+## Пять запретов, которые ломаются молча
 
 **1. Приложение не создаёт свой `<iframe>`.** UI рендерится прямо в документе
 SCO, CSS идёт обычным конвейером Vite. Отсюда: SCORM-слой **не нюхает DOM** —
@@ -86,18 +87,48 @@ SCO, CSS идёт обычным конвейером Vite. Отсюда: SCORM-
 `App.vue` (`runtime.kind !== "scorm"`). **Вне LMS переходы работают, не сломай
 автономный режим:** без LMS галерея должна оставаться удобной.
 
+**5. Контент для стороннего курса не инициализирует чужую сессию.**
+`embed-<id>.html` и файлы из `content-package/` (с вшитым
+`window.__CONTENT_EMBED__`) встраиваются iframe'ом в уроки чужого SCORM-курса.
+Там нельзя искать `API_1484_11` и вызывать `Initialize`: API, который
+найден, — это чужая SCO-сессия, наш Initialize сверху её ломает (второй
+Initialize в одной сессии LMS считает попытку закрытой, но уже в чужом
+курсе). `embedMode()` в `src/scorm/lesson.ts` выбирается только по явным
+признакам — `window.__VIEWER__`, `window.__CONTENT_EMBED__`, `?embed=` —
+**никогда** по наличию API, и поднимает `EmbedRuntime` (`src/scorm/runtime.ts`):
+никаких Initialize/Terminate/SetValue, прогресс в отдельном ключе
+`localStorage` (`configurator:embed-progress`, у лёгкого вьюера — свой,
+`configurator:embed-viewer-progress`). Встраивать в чужой курс —
+только файлы контент-zip; упаковщик вшивает флаг в файл, чтобы его нельзя
+было забыть.
+
+Ключи разные намеренно: вьюер работает «картинкой», панели заданий у него
+нет, но трекер всё равно живёт и отмечает загрузку модели и выбор детали. На
+общем ключе эти невидимые отметки потом всплыли бы в полном
+`lesson-<id>.html` как «уже выполненные задания» — обучающий открыл бы урок
+сразу готовым.
+
 ## Уроки и упаковка
 
 Каждая модель с 3D — отдельный урок: пункт меню со своим `href` на
 `lesson-<id>.html`, своя SCO-сессия, своя оценка (0 / 50 / 100 %) и своя запись
 в журнале LMS. Плюс пункт «Каталог моделей» — обзор курса и общий прогресс.
 `lesson-<id>.html` генерирует `scripts/vite-plugin-lessons.ts` после сборки из
-уже собранного `index.html`.
+уже собранного `index.html`; там же генерируется `embed-<id>.html` — лёгкий
+вьюер для вставки в сторонний курс (`window.__VIEWER__`: скрыты шапка урока и
+панель заданий).
 
-Упаковщик (`scripts/package-scorm.mjs`) без флагов: один `<resource>` на пункт
-меню. Вариант с одним SCO на весь курс и `<parameters>?lesson=<id>` удалён —
+Упаковщик (`scripts/package-scorm.mjs`) в режиме `scorm`: один `<resource>` на
+пункт меню. Вариант с одним SCO на весь курс и `<parameters>?lesson=<id>` удалён —
 HCM `<parameters>` игнорирует, импорт проходит, а все уроки молча открывают
-каталог.
+каталог. Отдельный режим упаковки `embed` (`npm run build:embed`,
+`node scripts/package-scorm.mjs embed`) собирает второй дистрибутив для
+встраивания в чужие курсы: `content-package/` + `configurator-content.zip` —
+тот же `dist` без манифеста, с вшитым `window.__CONTENT_EMBED__` в каждую
+HTML-точку входа (см. запрет 5). Режимы независимы (`scorm` по умолчанию,
+`all` — оба), оба читают один и тот же `dist`: отдельный Vite-конвейер ради
+embed-страниц размножал бы точки истины, а HTML-точки входа плагин и так
+генерирует при каждой сборке.
 
 - **ZIP только через Python `zipfile`.** `Compress-Archive` и `.NET ZipFile`
   пишут записи с обратными слэшами — LMS на Linux такой пакет не импортирует.
@@ -145,13 +176,17 @@ HCM `<parameters>` игнорирует, импорт проходит, а вс�
 
 ## Тесты
 
-`tests/scorm.spec.ts` — единственный автотест, 14 тестов. `tests/fakeLms.ts`
+`tests/scorm.spec.ts` — единственный автотест, 16 тестов. `tests/fakeLms.ts`
 подставляет фейковый `API_1484_11` в родительское окно и открывает SCO во
 вложенном iframe, как в настоящей LMS. Покрыто: отсутствие вложенного iframe
 (`page.frames().length === 2`), ровно один `Initialize`, прямые адреса всех 8
-уроков, отсутствие кнопок «к каталогу» и «Завершить», неразрывность прогресса
-при переключении вкладки, `suspend_data`, `score`/`completion`/`interactions`,
-единственный `Terminate` при уходе со страницы, автономный режим.
+уроков (урок и embed-страница), отсутствие кнопок «к каталогу» и «Завершить»,
+неразрывность прогресса при переключении вкладки, `suspend_data`,
+`score`/`completion`/`interactions`, единственный `Terminate` при уходе со
+страницы, автономный режим, встраивание (`embed-<id>.html` и `?embed=1`):
+ноль `Initialize`/`SetValue` при наличии API у родителя, скрытие chrome у
+вьюера, прогресс в `configurator:embed-progress` (у вьюера — свой ключ, и
+общий остаётся пустым).
 
 Почему тесты идут ~3 минуты — не чини, это не тормоз:
 
@@ -164,8 +199,8 @@ HCM `<parameters>` игнорирует, импорт проходит, а вс�
 ## CI и git
 
 `.github/workflows/ci.yml`: два job на каждом push/PR — `typecheck-and-build`
-(`npm ci` → typecheck → build → упаковка SCORM) и `e2e` (Playwright). Jest,
-сборка библиотеки и покрытие кода больше не существуют.
+(`npm ci` → typecheck → build → упаковка SCORM и контент-пакета) и `e2e`
+(Playwright). Jest, сборка библиотеки и покрытие кода больше не существуют.
 
-Не коммитить: `dist/`, `node_modules/`, `scorm-package/`, `*.zip`,
-`test-results/`, `playwright-report/`.
+Не коммитить: `dist/`, `node_modules/`, `scorm-package/`, `content-package/`,
+`*.zip`, `test-results/`, `playwright-report/`.
