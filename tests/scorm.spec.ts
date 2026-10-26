@@ -170,6 +170,36 @@ test.describe("навигация каталог ↔ урок", () => {
     expect(page.url()).toContain(`lesson=${LESSON}`);
   });
 
+  test("вне LMS кнопка «К каталогу» возвращает в галерею без перезагрузки", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as Window & { __docStamp?: string }).__docStamp =
+        Math.random().toString(36).slice(2);
+    });
+    await page.goto("/");
+    const app = page.locator(".app");
+
+    await app.getByRole("tab", { name: "Детали" }).click();
+    await app.locator(`a.card[href*="lesson=${LESSON}"]`).first().click();
+    await expect(app.locator(".lesson-title")).toContainText(LESSON_TITLE);
+
+    const stampBefore = await page.evaluate(
+      () => (window as Window & { __docStamp?: string }).__docStamp,
+    );
+    const back = app.getByRole("link", { name: /Каталог моделей/ });
+    await expect(back).toBeVisible();
+    await back.click();
+
+    await expect(app.locator(".catalog")).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => (window as Window & { __docStamp?: string }).__docStamp,
+      ),
+    ).toBe(stampBefore);
+    expect(new URL(page.url()).searchParams.get("lesson")).toBeNull();
+  });
+
   test("в уроке нет кнопки возврата в каталог", async ({ page }) => {
     await openScoInLms(page, `/lesson-${LESSON}.html`);
     const app = page.frameLocator("#sco");
@@ -361,6 +391,9 @@ test.describe("встраивание в сторонний курс", () => {
     // Полный урок как обычно — шапка и панель заданий на месте.
     await expect(app.locator(".lesson-title")).toContainText(LESSON_TITLE);
     await expect(app.locator(".course-panel")).toBeVisible();
+    // А вот кнопки «К каталогу» нет: урок встроен в чужой курс, уводить
+    // обучающего из него нельзя.
+    await expect(app.locator(".lesson-back")).toHaveCount(0);
     await expect(app.locator(".course-panel__runtime")).toContainText(
       "Встроенный режим",
     );

@@ -3,13 +3,25 @@
 <template>
   <div class="lesson">
     <!--
-      Кнопки «к каталогу» здесь нет намеренно. В режиме --lessons=files
-      каталог лежит в другом HTML-документе, и переход к нему из SCO —
-      это перезагрузка документа внутри фрейма, то есть второй
-      Initialize в одной сессии LMS. После этого LMS считает попытку
-      закрытой и уроки перестают открываться. Навигация — меню курса.
+      Внутри LMS кнопки «к каталогу» нет намеренно. В режиме
+      --lessons=files каталог лежит в другом HTML-документе, и переход
+      к нему из SCO — это перезагрузка документа внутри фрейма, то есть
+      второй Initialize в одной сессии LMS. После этого LMS считает
+      попытку закрытой и уроки перестают открываться.
+
+      Вне LMS (backToCatalog) кнопка есть: SCO-сессии там нет, поэтому
+      из «?lesson=» переход идёт через pushState, а из lesson-<id>.html —
+      обычной загрузкой index.html.
     -->
     <header v-if="!viewer" class="lesson-bar">
+      <a
+        v-if="backToCatalog"
+        class="lesson-back"
+        :href="catalogHref()"
+        @click="onBack"
+      >
+        ← Каталог моделей
+      </a>
       <h1 class="lesson-title">{{ model.name }}</h1>
     </header>
 
@@ -220,6 +232,7 @@ import ModelInfoPanel from "@/configurator/components/ModelInfoPanel.vue";
 import { useConfigurator } from "@/configurator/composables/useConfigurator";
 import type { ConfiguratorEventHandler } from "@/configurator/events";
 import type { Model } from "@/configurator/types/models";
+import { catalogHref, goToCatalog } from "@/scorm/lesson";
 import type { LessonTracker } from "@/scorm/tracker";
 
 /**
@@ -236,7 +249,25 @@ const props = defineProps<{
   /** Лёгкий вьюер (embed-<id>.html): шапка урока скрыта — вставка в
    *  чужой курс работает как картинка, без лишнего chrome. */
   viewer?: boolean;
+  /** Кнопка «К каталогу» в шапке: только вне LMS, где смена документа
+   *  безопасна. Внутри SCO она дала бы второй Initialize. */
+  backToCatalog?: boolean;
 }>();
+
+/** Возврат в галерею: вне LMS документ можно менять, внутри SCORM — нельзя. */
+function onBack(event: MouseEvent): void {
+  if (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return; // «открыть в новой вкладке» — отдаём браузеру
+  }
+  event.preventDefault();
+  goToCatalog({ allowDocumentChange: props.backToCatalog === true });
+}
 
 /** Мост «события 3D-конфигуратора → задания курса». Здесь нет ни CSS-классов,
  *  ни обращений к DOM: UI сообщает смысл действия, трекер решает, что с ним делать. */
