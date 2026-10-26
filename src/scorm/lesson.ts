@@ -86,7 +86,15 @@ const CATALOG_DOC = "index.html";
 function buildHref(lessonId: string | null): string {
   const url = new URL(window.location.href);
   // Один и тот же документ может содержать и каталог, и урок (режим params).
-  const inCatalogDocument = url.pathname.endsWith(`/${CATALOG_DOC}`);
+  //
+  // В dev и preview каталог открыт по «/» (сервер отдаёт тот же
+  // index.html), в SCORM-пакете — по «index.html». Форму пути надо
+  // сохранить: если превратить «/» в «/index.html», сравнение документов
+  // в navigate() решит, что нужен переход на другой документ, и вместо
+  // pushState останется console.warn.
+  const isDirectory = url.pathname.endsWith("/");
+  const inCatalogDocument =
+    isDirectory || url.pathname.endsWith(`/${CATALOG_DOC}`);
   url.pathname = inCatalogDocument
     ? url.pathname
     : url.pathname.replace(/[^/]*$/, CATALOG_DOC);
