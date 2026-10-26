@@ -29,6 +29,7 @@
           @pointerdown="beginScrub"
           @pointerup="endScrub"
           @pointercancel="endScrub"
+          @lostpointercapture="endScrub"
           @blur="endScrub"
           @input="onProgressChange"
           min="0"
@@ -111,8 +112,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>();
 
-// Preserve the user's thumb position during drag. Frame updates must not
-// fight pointer input while scrubbing through the timeline.
+// Пока ползунок тянут, позиция берётся из указателя, а не из кадров
+// воспроизведения — иначе обновления времени дёргали бы бегунок назад.
 const isScrubbing = ref(false);
 const scrubTime = ref(0);
 const displayTime = computed(() =>
@@ -121,7 +122,11 @@ const displayTime = computed(() =>
     : clampAnimationTime(props.currentTime, props.duration),
 );
 
-function beginScrub() {
+// Захватываем указатель: иначе отпускание за пределами полосы (и окна)
+// не придёт на элемент и `isScrubbing` залипнет вместе с бегунком.
+function beginScrub(event: PointerEvent) {
+  const input = event.currentTarget as HTMLInputElement | null;
+  input?.setPointerCapture?.(event.pointerId);
   isScrubbing.value = true;
   scrubTime.value = clampAnimationTime(props.currentTime, props.duration);
 }
@@ -180,7 +185,8 @@ const onLoopChange = () => {
   emit('update:loop', loop.value);
 };
 
-// Short clips show tenths of a second instead of 0:00 for their entire run.
+// Короткие клипы показывают десятые доли, иначе вся анимация укладывается
+// в «0:00»; для длинных клипов десятые только мешают.
 const formatTime = (seconds: number): string => {
   const safe = clampAnimationTime(seconds, props.duration);
   const mins = Math.floor(safe / 60);

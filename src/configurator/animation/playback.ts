@@ -1,12 +1,13 @@
 import type { AnimationClip } from "three";
 
 /**
- * glTF can contain "animations" that only describe a single static pose.
- * Such clips have a duration of ~1/30 s and make the progress thumb race
- * around even though the model never moves. Don't present them as playback.
+ * В glTF «анимацией» иногда оказывается одна статичная поза: длительность
+ * ~1/30 с, бегунок проскакивает, а модель не двигается. Показывать такое
+ * как воспроизведение нельзя.
  *
- * We also reject multi-key tracks whose values never change, as exporters
- * sometimes repeat an identical pose at several timestamps.
+ * Заодно отбрасываем треки с несколькими ключами, у которых значения не
+ * меняются: экспортёры иногда дублируют одну и ту же позу на разных
+ * отметках времени.
  */
 export function isPlayableClip(clip: AnimationClip): boolean {
   if (!Number.isFinite(clip.duration) || clip.duration <= 0) return false;
@@ -20,7 +21,7 @@ export function isPlayableClip(clip: AnimationClip): boolean {
     const stride = track.getValueSize();
     if (stride <= 0) return false;
 
-    // A changing keyframe value is required to produce actual movement.
+    // Движение есть только там, где меняется хотя бы одно значение ключа.
     for (let frame = 1; frame < times.length; frame++) {
       for (let component = 0; component < stride; component++) {
         if (Math.abs(values[frame * stride + component]! - values[component]!) > 1e-6) {

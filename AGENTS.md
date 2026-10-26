@@ -44,7 +44,7 @@ src/scorm/    адаптер LMS: scorm2004.ts, runtime.ts, lessons.ts, tracker.
 src/pages/    CatalogPage, LessonPage, CourseProgressPanel
 src/app/App.vue  корневой каркас: решает «каталог или урок», включает linksEnabled
 scripts/      catalog.mjs (+ .d.mts), vite-plugin-lessons.ts, package-scorm.mjs
-tests/        Playwright: scorm.spec.ts + fakeLms.ts
+tests/        Playwright: scorm.spec.ts + fakeLms.ts + playback.spec.ts
 public/       models/, tmh-previews/ — копируются в dist как есть
 ```
 
@@ -176,7 +176,7 @@ embed-страниц размножал бы точки истины, а HTML-т
 
 ## Тесты
 
-`tests/scorm.spec.ts` — единственный автотест, 16 тестов. `tests/fakeLms.ts`
+`tests/scorm.spec.ts` — 16 e2e-тестов. `tests/fakeLms.ts`
 подставляет фейковый `API_1484_11` в родительское окно и открывает SCO во
 вложенном iframe, как в настоящей LMS. Покрыто: отсутствие вложенного iframe
 (`page.frames().length === 2`), ровно один `Initialize`, прямые адреса всех 8
@@ -187,6 +187,10 @@ embed-страниц размножал бы точки истины, а HTML-т
 ноль `Initialize`/`SetValue` при наличии API у родителя, скрытие chrome у
 вьюера, прогресс в `configurator:embed-progress` (у вьюера — свой ключ, и
 общий остаётся пустым).
+
+`tests/playback.spec.ts` — 5 тестов чистых функций плеера (`isPlayableClip`,
+`clampAnimationTime`). Браузер не поднимают, но идут в том же прогоне: отдельный
+`node:test` требовал бы `--experimental-strip-types` из Node 22, а CI на Node 20.
 
 Почему тесты идут ~3 минуты — не чини, это не тормоз:
 

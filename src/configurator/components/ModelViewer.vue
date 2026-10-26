@@ -166,7 +166,7 @@ watch(
   { deep: true },
 );
 
-// Play/pause does not rewind. Only a replay from the end starts at 0.
+// Пауза не перематывает: с нуля начинается только повтор после конца.
 watch(
   () => props.isAnimationPlaying,
   (isPlaying) => {
@@ -180,15 +180,15 @@ watch(
   },
 );
 
-// Only explicit seeks arrive via this prop. Do not bind it to the running
-// playback time, or every frame will seek the mixer backwards.
+// Сюда приходят только явные перемотки. Привязывать проп к текущему
+// времени нельзя: тогда каждый кадр откатывал бы микшер назад.
 watch(
   () => props.animationTime,
   (time) => {
     if (!mixer || !currentAction || time === undefined) return;
     const position = clampAnimationTime(time, currentDuration);
     currentAction.time = position;
-    mixer.update(0); // Apply the new pose even while paused.
+    mixer.update(0); // Поза применяется и на паузе.
     emit("animationTimeUpdate", position);
   },
   { flush: "sync" },
@@ -455,8 +455,8 @@ function loadModel() {
       model.position.z -= center.z;
       model.position.y -= box.min.y;
 
-      // A glTF may declare animation tracks that are actually a single
-      // static pose (e.g. 81-775 and TEM23). Those are not playable clips.
+      // В glTF бывают «анимации» из одной статичной позы (например,
+      // у 81-775 и TEM23). Воспроизводить там нечего.
       const playableClips = gltf.animations.filter(isPlayableClip);
       if (playableClips.length > 0) {
         currentDuration = playableClips[0]!.duration;
@@ -491,9 +491,9 @@ function loadModel() {
 function animate() {
   animationId = requestAnimationFrame(animate);
 
-  // Read the clock on *every* frame, including while paused. Otherwise
-  // getDelta() after unpausing includes the entire pause in a single jump.
-  // Cap stalls from background tabs to prevent unexpected seeking.
+  // Часы читаются каждый кадр, в том числе на паузе: иначе первый getDelta()
+  // после снятия паузы проглотит всю паузу. Скачки из фоновой вкладки
+  // ограничиваем, чтобы модель не прыгала вперёд.
   const delta = Math.min(clock.getDelta(), 0.1);
   if (mixer && currentAction && props.isAnimationPlaying) {
     mixer.update(delta);

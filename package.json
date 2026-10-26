@@ -10,8 +10,7 @@
     "preview": "vite preview",
     "build:scorm": "npm run build && node scripts/package-scorm.mjs scorm",
     "build:embed": "npm run build && node scripts/package-scorm.mjs embed",
-    "test": "playwright test",
-    "test:animation": "node --experimental-strip-types --test tests/animation-playback.test.mjs"
+    "test": "playwright test"
   },
   "dependencies": {
     "three": "^0.170.0",
