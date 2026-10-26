@@ -87,7 +87,12 @@
       />
 
       <div class="viewer-wrapper">
-        <div class="focus-controls-wrapper">
+        <div
+          class="focus-controls-wrapper"
+          :class="{
+            'focus-controls-wrapper--lifted': panels.animationControlsOpen.value,
+          }"
+        >
           <div class="focus-controls-panel">
             <div class="focus-controls-header">
               <h3>Фокус</h3>
@@ -130,20 +135,6 @@
             'animation-controls-wrapper--open': panels.animationControlsOpen.value,
           }"
         >
-          <button
-            v-if="animation.hasAnimations"
-            class="animation-tab"
-            @click="toggleAnimationControls"
-            :aria-label="
-              panels.animationControlsOpen.value
-                ? 'Скрыть управление анимацией'
-                : 'Показать управление анимацией'
-            "
-            :aria-expanded="panels.animationControlsOpen.value"
-          >
-            <span class="animation-tab-handle" aria-hidden="true"></span>
-          </button>
-
           <AnimationControls
             :has-animations="animation.hasAnimations"
             :is-playing="animation.isPlaying"
@@ -151,6 +142,8 @@
             :duration="animation.duration"
             :loop="animation.loop"
             :playback-speed="animation.speed"
+            :expanded="panels.animationControlsOpen.value"
+            @toggle-expanded="toggleAnimationControls"
             @play="playAnimation"
             @pause="pauseAnimation"
             @seek="seekAnimation"
@@ -372,10 +365,6 @@ watch(
   display: none;
 }
 
-.animation-tab {
-  display: none;
-}
-
 .viewer-wrapper {
   flex: 1;
   height: 100%;
@@ -451,8 +440,25 @@ watch(
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
-  min-width: 400px;
   max-width: 600px;
+}
+
+/* Развёрнутая плашка — широкая, свёрнутая (пилюля) — по размеру содержимого */
+.animation-controls-wrapper--open {
+  min-width: 400px;
+  /* Выше панели «Фокус», чтобы список скоростей не оказывался под ней */
+  z-index: 13;
+}
+
+/* Пустые области шторок не перехватывают клики: интерактивны только кнопки и содержимое */
+.sidebar-drawer,
+.info-panel-drawer {
+  pointer-events: none;
+}
+
+.sidebar-drawer > *,
+.info-panel-drawer > * {
+  pointer-events: auto;
 }
 
 /* ========== Панель информации о модели ========== */
@@ -575,57 +581,56 @@ watch(
     flex: 1;
   }
 
-  /* Контролы анимации */
+  /* Контролы анимации: свёрнутая пилюля слева, развёрнутая — шторка снизу */
   .animation-controls-wrapper {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    /* По умолчанию торчит только ручка (52px) снизу */
-    transform: translateY(calc(100% - 52px));
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    min-width: unset;
-    max-width: unset;
-    background: white;
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.18);
-    padding: 0;
-    display: flex;
-    flex-direction: column;
+    bottom: 16px;
+    left: 16px;
+    transform: none;
+    max-width: none;
   }
 
   .animation-controls-wrapper--open {
-    transform: translateY(0);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    min-width: unset;
+    background: white;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.18);
   }
 
-  /* Ручка-закладка для анимации */
-  .animation-tab {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 14px 20px;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid #e0e0e0;
-    cursor: pointer;
-    touch-action: manipulation;
-    width: 100%;
-    flex-shrink: 0;
+  /* Пока плашка анимации развёрнута, «Фокус» поднимается над ней */
+  .focus-controls-wrapper--lifted {
+    bottom: 164px !important;
   }
 
-  .animation-tab:focus-visible {
-    outline: 3px solid #ffd600;
-    outline-offset: -3px;
+  /* Компактная панель «Фокус», чтобы не закрывать капсулу анимации */
+  .focus-controls-wrapper {
+    right: 12px !important;
   }
 
-  .animation-tab-handle {
-    display: block;
-    width: 36px;
-    height: 4px;
-    background: #ccc;
-    border-radius: 2px;
-    flex-shrink: 0;
+  .focus-controls-panel {
+    min-width: 0;
+    padding: 8px 10px;
+  }
+
+  .focus-controls-header {
+    margin-bottom: 6px;
+  }
+
+  .focus-controls-header h3 {
+    font-size: 14px;
+  }
+
+  .focus-control-label {
+    font-size: 13px;
+    gap: 6px;
+  }
+
+  .focus-control-label input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
   }
 }
 
