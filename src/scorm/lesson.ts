@@ -86,7 +86,15 @@ const CATALOG_DOC = "index.html";
 function buildHref(lessonId: string | null): string {
   const url = new URL(window.location.href);
   // Один и тот же документ может содержать и каталог, и урок (режим params).
-  const inCatalogDocument = url.pathname.endsWith(`/${CATALOG_DOC}`);
+  //
+  // В dev и preview каталог открыт по «/» (сервер отдаёт тот же
+  // index.html), в SCORM-пакете — по «index.html». Форму пути надо
+  // сохранить: если превратить «/» в «/index.html», сравнение документов
+  // в navigate() решит, что нужен переход на другой документ, и вместо
+  // pushState останется console.warn.
+  const isDirectory = url.pathname.endsWith("/");
+  const inCatalogDocument =
+    isDirectory || url.pathname.endsWith(`/${CATALOG_DOC}`);
   url.pathname = inCatalogDocument
     ? url.pathname
     : url.pathname.replace(/[^/]*$/, CATALOG_DOC);
@@ -131,24 +139,30 @@ export function onRouteChange(listener: RouteListener): () => void {
  * протокола: HCM после такого считает попытку закрытой и уроки
  * перестают открываться. Смена урока — только меню курса.
  *
- * В режиме встраивания запрет снимается: там сессии нет (EmbedRuntime
- * не вызывает Initialize), поэтому смена документа безопасна.
- *
- * Сейчас эта ветка недостижима из UI: `goToCatalog` не вызывается ни
- * откуда, а кнопки возврата в каталог в уроке нет, так что `navigate`
- * всегда вызывается из каталога, где документ один и тот же. Ветка
- * оставлена как страховка: если урок или каталог в контент-пакете
- * всё-таки смогут уйти в другой документ, переход должен состояться
- * (вне SCORM второй Initialize невозможен), а не молча превратиться
- * в console.warn и нерабочую ссылку.
+ * В режиме встраивания и вне LMS запрет снимается: SCO-сессии там нет
+ * (EmbedRuntime и LocalRuntime не вызывают Initialize), поэтому смену
+ * документа разрешает `allowDocumentChange`. Так ходит кнопка
+ * «К каталогу» вне LMS: каталог лежит в index.html, и из
+ * lesson-<id>.html это честная загрузка другого документа.
  */
-function navigate(lessonId: string | null): void {
+export interface NavigateOptions {
+  /**
+   * Разрешить смену HTML-документа. Только вне SCORM: второго
+   * Initialize там быть не может. Внутри LMS флаг не выставляется.
+   */
+  allowDocumentChange?: boolean;
+}
+
+function navigate(
+  lessonId: string | null,
+  options: NavigateOptions = {},
+): void {
   const target = buildHref(lessonId);
 
   const currentDocument = new URL(window.location.href).pathname;
   const targetDocument = target.split("?")[0] ?? target;
   if (currentDocument !== targetDocument) {
-    if (embedMode()) {
+    if (options.allowDocumentChange || embedMode()) {
       window.location.href = target;
       return;
     }
@@ -170,12 +184,15 @@ function navigate(lessonId: string | null): void {
   }
 }
 
-export function goToLesson(id: string): void {
-  navigate(id);
+export function goToLesson(
+  id: string,
+  options: NavigateOptions = {},
+): void {
+  navigate(id, options);
 }
 
-export function goToCatalog(): void {
-  navigate(null);
+export function goToCatalog(options: NavigateOptions = {}): void {
+  navigate(null, options);
 }
 
 window.addEventListener("popstate", notify);
