@@ -1,10 +1,58 @@
 <template>
-  <div v-if="hasAnimations" class="animation-controls">
-    <div class="controls-header">
-      <h3>Анимация</h3>
+  <div
+    v-if="hasAnimations"
+    class="animation-controls"
+    :class="{ 'animation-controls--pill': !expanded }"
+  >
+    <!-- Свёрнутый вид: только кнопка пуска и стрелка «развернуть» -->
+    <div v-if="!expanded" class="pill">
+      <button
+        type="button"
+        class="play-pause-btn"
+        @click="togglePlayPause"
+        :aria-label="isPlaying ? 'Пауза' : 'Воспроизвести'"
+        :title="isPlaying ? 'Пауза' : 'Воспроизвести'"
+      >
+        <svg v-if="!isPlaying" viewBox="0 0 24 24" width="24" height="24">
+          <path fill="currentColor" d="M8 5v14l11-7z" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" width="24" height="24">
+          <path fill="currentColor" d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+        </svg>
+      </button>
+      <span class="pill-divider" aria-hidden="true"></span>
+      <button
+        type="button"
+        class="pill-expand"
+        @click="emit('toggle-expanded')"
+        aria-label="Развернуть плашку анимации"
+        title="Развернуть"
+        :aria-expanded="false"
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+        </svg>
+      </button>
     </div>
 
-    <div class="controls-body">
+    <div v-if="expanded" class="controls-header">
+      <h3>Анимация</h3>
+      <!-- Свернуть плашку -->
+      <button
+        type="button"
+        class="collapse-btn"
+        @click="emit('toggle-expanded')"
+        aria-label="Свернуть плашку анимации"
+        title="Свернуть"
+        :aria-expanded="true"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+        </svg>
+      </button>
+    </div>
+
+    <div v-if="expanded" class="controls-body">
       <!-- Play/Pause Button -->
       <button
         class="play-pause-btn"
@@ -41,20 +89,45 @@
         </div>
       </div>
 
-      <!-- Speed Control -->
+      <!-- Speed Control: список раскрывается вверх -->
       <div class="speed-control">
-        <label for="animation-speed-select">Скорость:</label>
-        <select
-          id="animation-speed-select"
-          v-model="playbackSpeed"
-          @change="onSpeedChange"
-        >
-          <option :value="0.25">0.25x</option>
-          <option :value="0.5">0.5x</option>
-          <option :value="1">1x</option>
-          <option :value="1.5">1.5x</option>
-          <option :value="2">2x</option>
-        </select>
+        <label id="animation-speed-label">Скорость:</label>
+        <div class="speed-dropdown" ref="speedRoot">
+          <button
+            type="button"
+            class="speed-trigger"
+            aria-haspopup="listbox"
+            :aria-expanded="speedOpen"
+            aria-labelledby="animation-speed-label"
+            @click="speedOpen = !speedOpen"
+            @keydown.esc="speedOpen = false"
+          >
+            <span>{{ playbackSpeed }}x</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+            </svg>
+          </button>
+          <ul
+            v-if="speedOpen"
+            class="speed-menu"
+            role="listbox"
+            aria-labelledby="animation-speed-label"
+          >
+            <li v-for="s in speedOptions" :key="s" role="presentation">
+              <button
+                type="button"
+                role="option"
+                class="speed-option"
+                :class="{ 'speed-option--active': s === playbackSpeed }"
+                :aria-selected="s === playbackSpeed"
+                @click="selectSpeed(s)"
+                @keydown.esc="speedOpen = false"
+              >
+                {{ s }}x
+              </button>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!-- Loop Control -->
@@ -69,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 // Интерфейс входных параметров компонента
 interface Props {
@@ -79,6 +152,7 @@ interface Props {
   duration?: number; // Общая длительность анимации в секундах
   loop?: boolean; // Повторять ли анимацию
   playbackSpeed?: number; // Скорость воспроизведения
+  expanded?: boolean; // Развёрнута ли плашка (на десктопе свёрнутая — компактная полоса)
 }
 
 // Интерфейс событий компонента
@@ -88,6 +162,7 @@ interface Emits {
   (e: 'seek', time: number): void; // Событие перемотки на указанное время
   (e: 'speed-change', speed: number): void; // Событие изменения скорости
   (e: 'loop-change', loop: boolean): void; // Событие изменения режима повтора
+  (e: 'toggle-expanded'): void; // Запрос свернуть/развернуть плашку
   (e: 'update:isPlaying', value: boolean): void; // Обновление состояния воспроизведения
   (e: 'update:loop', value: boolean): void; // Обновление состояния повтора
   (e: 'update:playbackSpeed', value: number): void; // Обновление скорости воспроизведения
@@ -100,6 +175,7 @@ const props = withDefaults(defineProps<Props>(), {
   duration: 0,
   loop: true,
   playbackSpeed: 1,
+  expanded: true,
 });
 
 const emit = defineEmits<Emits>();
@@ -153,6 +229,29 @@ const onSpeedChange = () => {
   emit('speed-change', playbackSpeed.value);
   emit('update:playbackSpeed', playbackSpeed.value);
 };
+
+// Выбор скорости: собственный список (нативный select раскрывается вниз)
+const speedOptions = [0.25, 0.5, 1, 1.5, 2];
+const speedOpen = ref(false);
+const speedRoot = ref<HTMLElement | null>(null);
+
+const selectSpeed = (value: number) => {
+  playbackSpeed.value = value;
+  onSpeedChange();
+  speedOpen.value = false;
+};
+
+// Закрываем список при клике вне него
+const onDocumentPointerDown = (event: Event) => {
+  if (speedRoot.value && !speedRoot.value.contains(event.target as Node)) {
+    speedOpen.value = false;
+  }
+};
+
+onMounted(() => document.addEventListener('pointerdown', onDocumentPointerDown));
+onBeforeUnmount(() =>
+  document.removeEventListener('pointerdown', onDocumentPointerDown),
+);
 
 // Обработка изменения режима повтора
 const onLoopChange = () => {
@@ -289,19 +388,66 @@ const formatTime = (seconds: number): string => {
   font-weight: 500;
 }
 
-.speed-control select {
+.speed-dropdown {
+  position: relative;
   flex: 1;
+}
+
+.speed-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   padding: 6px 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
-  cursor: pointer;
+  color: #333;
   background: white;
+  cursor: pointer;
 }
 
-.speed-control select:focus {
+.speed-trigger:focus-visible {
   outline: none;
   border-color: #4a90e2;
+}
+
+.speed-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  z-index: 5;
+}
+
+.speed-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: #333;
+  text-align: left;
+  cursor: pointer;
+}
+
+.speed-option:hover,
+.speed-option:focus-visible {
+  background: #eef5ff;
+  outline: none;
+}
+
+.speed-option--active {
+  color: #4a90e2;
+  font-weight: 600;
 }
 
 .loop-control {
@@ -336,23 +482,142 @@ const formatTime = (seconds: number): string => {
   outline-offset: 2px;
 }
 
-/* Мобильные стили */
+.controls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.collapse-btn:hover {
+  background: #eee;
+}
+
+.collapse-btn:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 2px;
+}
+
+/* Свёрнутый вид: пилюля из кнопки пуска и стрелки */
+.animation-controls.animation-controls--pill {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: white;
+  border-radius: 999px;
+  padding: 4px 8px 4px 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.pill .play-pause-btn {
+  width: 44px;
+  height: 44px;
+}
+
+.pill .play-pause-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.pill-divider {
+  width: 1px;
+  height: 22px;
+  background: #ddd;
+}
+
+.pill-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.pill-expand:hover {
+  background: #eee;
+}
+
+.pill-expand:focus-visible {
+  outline: 3px solid #4a90e2;
+  outline-offset: 2px;
+}
+
+/* Мобильные стили: компактная развёрнутая плашка */
 @media (max-width: 768px) {
   .animation-controls {
     margin: 0;
     border-radius: 0;
     box-shadow: none;
-    padding: 16px 20px 20px;
+    padding: 10px 16px 14px;
+  }
+
+  .controls-header {
+    margin-bottom: 4px;
+  }
+
+  /* Строка 1: пуск + прогресс. Строка 2: скорость + повтор */
+  .controls-body {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px 12px;
   }
 
   .play-pause-btn {
-    width: 56px;
-    height: 56px;
+    grid-column: 1;
+    grid-row: 1;
+    width: 44px;
+    height: 44px;
   }
 
   .play-pause-btn svg {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .progress-container {
+    grid-column: 2 / 4;
+    grid-row: 1;
+    gap: 4px;
+  }
+
+  .speed-control {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .loop-control {
+    grid-column: 3;
+    grid-row: 2;
   }
 
   /* Увеличиваем ползунок для пальцев */
@@ -371,10 +636,16 @@ const formatTime = (seconds: number): string => {
     height: 24px;
   }
 
-  .speed-control select {
+  .speed-trigger {
+    padding: 6px 10px;
+    font-size: 15px;
+    min-height: 40px;
+  }
+
+  .speed-option {
     padding: 10px 12px;
     font-size: 15px;
-    min-height: 44px;
+    min-height: 40px;
   }
 
   .loop-control input[type='checkbox'] {
@@ -384,7 +655,7 @@ const formatTime = (seconds: number): string => {
 
   .loop-control label {
     font-size: 15px;
-    gap: 12px;
+    gap: 8px;
   }
 }
 </style>
