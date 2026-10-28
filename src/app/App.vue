@@ -2,7 +2,10 @@
      собирает трекер. Приложение целиком живёт в документе страницы,
      без собственного iframe. -->
 <template>
-  <div class="app" :class="`app--${view}`">
+  <div
+    class="app"
+    :class="[`app--${view}`, { 'app--no-panel': !panelVisible }]"
+  >
     <p v-if="loadError" class="app__message">{{ loadError }}</p>
     <p v-else-if="!tracker" class="app__message">Загрузка каталога моделей…</p>
     <template v-else>
@@ -21,11 +24,12 @@
         :links-enabled="linksEnabled"
       />
       <!--
-        Лёгкий вьюер вставляется в чужой курс «как картинка»: без шапки
-        урока и без панели заданий — там их не видно и не за чем.
+        Панель заданий — про журнал LMS, поэтому живёт только внутри SCO.
+        В лёгком вьюере её нет по определению, а вне LMS показывать нечего:
+        прогресс там вспомогательный и лежит в localStorage.
       -->
       <CourseProgressPanel
-        v-if="!viewer"
+        v-if="panelVisible"
         :class="{ 'course-panel--inline': view === 'catalog' }"
         :tracker="tracker"
         :runtime-label="runtime.label"
@@ -99,6 +103,14 @@ const linksEnabled = computed(() => props.runtime.kind !== "scorm");
 const viewer = embedMode() === "viewer";
 
 /**
+ * Панель заданий — про журнал LMS, поэтому только внутри SCO: в каталоге
+ * курса она показывает общий прогресс, в уроке — задания этой модели.
+ * Вне LMS журнала нет: локальный прогресс вспомогательный, и панель там
+ * только занимает место. Во вьюере её нет по определению.
+ */
+const panelVisible = computed(() => !viewer && props.runtime.kind === "scorm");
+
+/**
  * Кнопка «К каталогу» в уроке — только вне LMS. Внутри SCO смена
  * документа дала бы второй Initialize, а в embed-уроке увела бы из
  * чужого курса; там навигация — меню курса.
@@ -126,9 +138,9 @@ onMounted(async () => {
   }
 });
 
-// Переходы «каталог ↔ урок» не перезагружают страницу: перезагрузка SCO
-// означала бы второй Initialize в одной сессии LMS.
 onBeforeUnmount(
+  // Переходы «каталог ↔ урок» не перезагружают страницу: перезагрузка SCO
+  // означала бы второй Initialize в одной сессии LMS.
   onRouteChange(() => {
     lessonId.value = currentLessonId();
   }),
@@ -176,6 +188,11 @@ body {
   grid-template-columns: minmax(0, 1fr) 332px;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
+}
+
+.app--catalog.app--no-panel {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .app--catalog > .catalog {
