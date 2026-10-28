@@ -36,6 +36,20 @@ test.describe("плашка анимации", () => {
     await expect(app.locator(".loop-control")).toBeVisible();
     await expect(app.locator(".pill")).toHaveCount(0);
 
+    // Узкий десктоп (1024): развёрнутая плашка уходит влево, панель «Фокус»
+    // остаётся справа. Раньше 400-пиксельная плашка по центру накрывала её
+    // (z-index 13 против 12) и галочку «Фокус на детали» нельзя было нажать.
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const plashka = await app.locator(".animation-controls-wrapper").boundingBox();
+    const focusPanel = await app.locator(".focus-controls-panel").boundingBox();
+    expect(plashka && focusPanel).toBeTruthy();
+    expect(plashka!.x + plashka!.width).toBeLessThanOrEqual(focusPanel!.x);
+
+    const focusCheckbox = app.locator(".focus-control-label input");
+    await expect(focusCheckbox).not.toBeChecked();
+    await focusCheckbox.click();
+    await expect(focusCheckbox).toBeChecked();
+
     // Скорость — свой список (нативный select раскрывался вниз и
     // вылезал за плашку). Выбор закрывает список и меняет подпись.
     await app.locator(".speed-trigger").click();

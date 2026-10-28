@@ -2,6 +2,7 @@
   <div
     v-if="hasAnimations"
     class="animation-controls"
+    ref="root"
     :class="{ 'animation-controls--pill': !expanded }"
   >
     <!-- Свёрнутый вид: только кнопка пуска и стрелка «развернуть» -->
@@ -24,7 +25,7 @@
       <button
         type="button"
         class="pill-expand"
-        @click="emit('toggle-expanded')"
+        @click="requestToggle"
         aria-label="Развернуть плашку анимации"
         title="Развернуть"
         :aria-expanded="false"
@@ -41,7 +42,7 @@
       <button
         type="button"
         class="collapse-btn"
-        @click="emit('toggle-expanded')"
+        @click="requestToggle"
         aria-label="Свернуть плашку анимации"
         title="Свернуть"
         :aria-expanded="true"
@@ -103,11 +104,12 @@
           <button
             type="button"
             class="speed-trigger"
+            ref="triggerRef"
             aria-haspopup="listbox"
             :aria-expanded="speedOpen"
             aria-labelledby="animation-speed-label"
             @click="speedOpen = !speedOpen"
-            @keydown.esc="speedOpen = false"
+            @keydown.esc="closeSpeedMenu()"
           >
             <span>{{ playbackSpeed }}x</span>
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -128,7 +130,7 @@
                 :class="{ 'speed-option--active': s === playbackSpeed }"
                 :aria-selected="s === playbackSpeed"
                 @click="selectSpeed(s)"
-                @keydown.esc="speedOpen = false"
+                @keydown.esc="closeSpeedMenu()"
               >
                 {{ s }}x
               </button>
@@ -149,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { clampAnimationTime } from '../animation/playback';
 
 // Интерфейс входных параметров компонента
@@ -241,6 +243,24 @@ const togglePlayPause = () => {
   }
 };
 
+// Свернуть/развернуть. Кнопок две, и при переключении использованная
+// исчезает из DOM вместе со списком скоростей: без возврата фокуса он
+// улетал в body, и клавиатурный обход начинался со страницы заново.
+const root = ref<HTMLElement | null>(null);
+
+function focusBySelector(selector: string): void {
+  void nextTick(() => {
+    root.value?.querySelector<HTMLElement>(selector)?.focus();
+  });
+}
+
+function requestToggle(): void {
+  const hadFocus = root.value?.contains(document.activeElement) ?? false;
+  const wasExpanded = props.expanded;
+  emit('toggle-expanded');
+  if (hadFocus) focusBySelector(wasExpanded ? '.pill-expand' : '.collapse-btn');
+}
+
 // Обработка изменения позиции на полосе прокрутки
 const onProgressChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -259,11 +279,19 @@ const onSpeedChange = () => {
 const speedOptions = [0.25, 0.5, 1, 1.5, 2];
 const speedOpen = ref(false);
 const speedRoot = ref<HTMLElement | null>(null);
+const triggerRef = ref<HTMLElement | null>(null);
+
+// Закрыть список и вернуть фокус кнопке: выбранный пункт исчезает из DOM,
+// и фокус без этого уходил в body.
+function closeSpeedMenu(): void {
+  speedOpen.value = false;
+  void nextTick(() => triggerRef.value?.focus());
+}
 
 const selectSpeed = (value: number) => {
   playbackSpeed.value = value;
   onSpeedChange();
-  speedOpen.value = false;
+  closeSpeedMenu();
 };
 
 // Закрываем список при клике вне него
