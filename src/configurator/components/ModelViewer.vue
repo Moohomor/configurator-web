@@ -22,6 +22,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { ModelPart, TexturePack } from "../types/models";
+import { clampAnimationTime, isPlayableClip } from "../animation/playback";
 
 interface Props {
   modelPath: string;
@@ -44,6 +45,7 @@ const emit = defineEmits<{
   partClick: [part: ModelPart];
   animationsLoaded: [hasAnimations: boolean, duration: number];
   animationTimeUpdate: [time: number];
+  animationFinished: [];
 }>();
 
 const containerRef = ref<HTMLDivElement>();
@@ -65,8 +67,8 @@ const tooltipPos = reactive({ x: 0, y: 0 });
 
 // Переменные для анимации
 let mixer: THREE.AnimationMixer | null = null;
-let animations: THREE.AnimationClip[] = [];
 let currentAction: THREE.AnimationAction | null = null;
+let currentDuration = 0;
 let clock: THREE.Clock;
 
 const parts: ModelPart[] = [];
@@ -92,6 +94,7 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(animationId);
   if (mixer) {
     mixer.stopAllAction();
+    mixer.removeEventListener("finished", onAnimationFinished);
   }
   renderer.dispose();
   controls.dispose();
@@ -163,50 +166,59 @@ watch(
   { deep: true },
 );
 
-// Отслеживание изменений параметров анимации
-// Управление воспроизведением/паузой анимации
+// Пауза не перематывает: с нуля начинается только повтор после конца.
 watch(
   () => props.isAnimationPlaying,
   (isPlaying) => {
-    if (currentAction) {
-      if (isPlaying) {
-        currentAction.paused = false;
-      } else {
-        currentAction.paused = true;
-      }
+    if (!currentAction || !mixer) return;
+    if (isPlaying && currentAction.time >= currentDuration - 1e-5) {
+      currentAction.reset().play();
+      mixer.update(0);
+      emit("animationTimeUpdate", 0);
     }
+    currentAction.paused = !isPlaying;
   },
 );
 
-// Перемотка анимации на указанное время
+// Сюда приходят только явные перемотки. Привязывать проп к текущему
+// времени нельзя: тогда каждый кадр откатывал бы микшер назад.
 watch(
   () => props.animationTime,
   (time) => {
-    if (mixer && currentAction && time !== undefined) {
-      mixer.setTime(time);
-    }
+    if (!mixer || !currentAction || time === undefined) return;
+    const position = clampAnimationTime(time, currentDuration);
+    currentAction.time = position;
+    mixer.update(0); // Поза применяется и на паузе.
+    emit("animationTimeUpdate", position);
   },
+  { flush: "sync" },
 );
 
-// Изменение скорости воспроизведения анимации
 watch(
   () => props.animationSpeed,
   (speed) => {
-    if (currentAction && speed !== undefined) {
+    if (currentAction && speed !== undefined && Number.isFinite(speed) && speed > 0) {
       currentAction.timeScale = speed;
     }
   },
 );
 
-// Изменение режима повтора анимации
 watch(
   () => props.animationLoop,
   (loop) => {
-    if (currentAction) {
-      currentAction.loop = loop ? THREE.LoopRepeat : THREE.LoopOnce;
-    }
+    if (currentAction) configureLoop(currentAction, loop !== false);
   },
 );
+
+function configureLoop(action: THREE.AnimationAction, loop: boolean) {
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  action.clampWhenFinished = !loop;
+}
+
+function onAnimationFinished() {
+  emit("animationTimeUpdate", currentDuration);
+  emit("animationFinished");
+}
 
 // Позиция источника света
 watch(
@@ -443,28 +455,25 @@ function loadModel() {
       model.position.z -= center.z;
       model.position.y -= box.min.y;
 
-      // Обработка анимаций из загруженной модели
-      if (gltf.animations && gltf.animations.length > 0) {
-        animations = gltf.animations;
+      // В glTF бывают «анимации» из одной статичной позы (например,
+      // у 81-775 и TEM23). Воспроизводить там нечего.
+      const playableClips = gltf.animations.filter(isPlayableClip);
+      if (playableClips.length > 0) {
+        currentDuration = playableClips[0]!.duration;
         mixer = new THREE.AnimationMixer(model);
-
-        // Запустить первую анимацию из списка
-        currentAction = mixer.clipAction(animations[0]!);
-        currentAction.loop = THREE.LoopRepeat; // Режим повтора по умолчанию
+        currentAction = mixer.clipAction(playableClips[0]!);
+        currentAction.timeScale = props.animationSpeed ?? 1;
+        configureLoop(currentAction, props.animationLoop !== false);
         currentAction.play();
-        currentAction.paused = true; // Начинаем с паузы
-
-        const duration = animations[0]!.duration;
-        emit("animationsLoaded", true, duration);
-        console.log(
-          "Анимации загружены:",
-          animations.length,
-          "Длительность:",
-          duration,
-        );
+        currentAction.paused = !props.isAnimationPlaying;
+        mixer.addEventListener("finished", onAnimationFinished);
+        emit("animationsLoaded", true, currentDuration);
+        console.log("Воспроизводимых анимаций:", playableClips.length, "Длительность:", currentDuration);
       } else {
         emit("animationsLoaded", false, 0);
-        console.log("Анимации не найдены");
+        if (gltf.animations.length > 0) {
+          console.info("Модель содержит только статичные ключевые кадры — воспроизведение недоступно");
+        }
       }
 
       emit("partsLoaded", parts);
@@ -482,15 +491,13 @@ function loadModel() {
 function animate() {
   animationId = requestAnimationFrame(animate);
 
-  // Обновление анимации при воспроизведении
-  if (mixer && props.isAnimationPlaying) {
-    const delta = clock.getDelta();
+  // Часы читаются каждый кадр, в том числе на паузе: иначе первый getDelta()
+  // после снятия паузы проглотит всю паузу. Скачки из фоновой вкладки
+  // ограничиваем, чтобы модель не прыгала вперёд.
+  const delta = Math.min(clock.getDelta(), 0.1);
+  if (mixer && currentAction && props.isAnimationPlaying) {
     mixer.update(delta);
-
-    // Отправить текущее время анимации родительскому компоненту
-    if (currentAction) {
-      emit("animationTimeUpdate", currentAction.time);
-    }
+    emit("animationTimeUpdate", currentAction.time);
   }
 
   controls.update();

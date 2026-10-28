@@ -140,6 +140,7 @@ export function useConfigurator(options: UseConfiguratorOptions) {
     animation.duration = duration;
     animation.currentTime = 0;
     animation.isPlaying = false;
+    animation.seekTime = undefined;
   }
 
   function onAnimationTimeUpdate(time: number): void {
@@ -147,7 +148,13 @@ export function useConfigurator(options: UseConfiguratorOptions) {
     animation.seekTime = undefined;
   }
 
+  function onAnimationFinished(): void {
+    animation.currentTime = animation.duration;
+    animation.isPlaying = false;
+  }
+
   function playAnimation(): void {
+    if (!animation.hasAnimations) return;
     animation.isPlaying = true;
     emit("animation-played", {});
   }
@@ -157,8 +164,10 @@ export function useConfigurator(options: UseConfiguratorOptions) {
   }
 
   function seekAnimation(time: number): void {
-    animation.seekTime = time;
-    animation.currentTime = time;
+    if (!animation.hasAnimations || !Number.isFinite(time)) return;
+    const position = Math.max(0, Math.min(time, animation.duration));
+    animation.seekTime = position;
+    animation.currentTime = position;
   }
 
   function changeAnimationSpeed(speed: number): void {
@@ -212,6 +221,7 @@ export function useConfigurator(options: UseConfiguratorOptions) {
     onPartsLoaded,
     onAnimationsLoaded,
     onAnimationTimeUpdate,
+    onAnimationFinished,
     selectPart,
     selectTexturePack,
     togglePartVisibility,

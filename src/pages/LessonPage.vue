@@ -138,6 +138,7 @@
           @part-click="selectPart"
           @animations-loaded="onAnimationsLoaded"
           @animation-time-update="onAnimationTimeUpdate"
+          @animation-finished="onAnimationFinished"
         />
 
         <!-- Контролы анимации -->
@@ -297,6 +298,7 @@ const {
   onPartsLoaded,
   onAnimationsLoaded,
   onAnimationTimeUpdate,
+  onAnimationFinished,
   selectPart,
   selectTexturePack,
   togglePartVisibility,
