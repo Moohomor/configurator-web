@@ -44,7 +44,7 @@ src/scorm/    адаптер LMS: scorm2004.ts, runtime.ts, lessons.ts, tracker.
 src/pages/    CatalogPage, LessonPage, CourseProgressPanel
 src/app/App.vue  корневой каркас: решает «каталог или урок», включает linksEnabled
 scripts/      catalog.mjs (+ .d.mts), vite-plugin-lessons.ts, package-scorm.mjs
-tests/        Playwright: scorm.spec.ts + fakeLms.ts + playback.spec.ts
+tests/        Playwright: scorm.spec.ts + fakeLms.ts + playback.spec.ts + animation-ui.spec.ts
 public/       models/, tmh-previews/ — копируются в dist как есть
 ```
 
@@ -177,7 +177,7 @@ embed-страниц размножал бы точки истины, а HTML-т
 
 ## Тесты
 
-`tests/scorm.spec.ts` — 18 e2e-тестов. `tests/fakeLms.ts`
+`tests/scorm.spec.ts` — 19 e2e-тестов. `tests/fakeLms.ts`
 подставляет фейковый `API_1484_11` в родительское окно и открывает SCO во
 вложенном iframe, как в настоящей LMS. Покрыто: отсутствие вложенного iframe
 (`page.frames().length === 2`), ровно один `Initialize`, прямые адреса всех 8
@@ -195,13 +195,19 @@ embed-страниц размножал бы точки истины, а HTML-т
 `clampAnimationTime`). Браузер не поднимают, но идут в том же прогоне: отдельный
 `node:test` требовал бы `--experimental-strip-types` из Node 22, а CI на Node 20.
 
-Почему тесты идут ~3 минуты — не чини, это не тормоз:
+`tests/animation-ui.spec.ts` — плашка анимации: свёрнута в пилюлю,
+разворачивается кнопкой, список скоростей меняет `2x`. Открывает `reductor`
+(2,4 МБ): у `sa-3` анимаций нет, у 81-775 и tem23 в GLB статичная поза на
+1/30 с (её отсекает `isPlayableClip`), а ЭП20 на 29 МБ слишком тяжёл.
+
+Почему тесты идут ~6 минут — не чини, это не тормоз:
 
 - `workers: 1` и `timeout: 120_000`: программный WebGL в headless Chromium грузит
   машину, на параллельных воркерах тесты падали на ровном месте.
-- Урок в тестах — `sa-3` (1,5 МБ). ЭП20 — 29 МБ GLB, разбор которого блокирует
-  поток отрисовки и срывает таймауты; остальные семь уроков проверяются
-  наличием своих `lesson-<id>.html`, без открытия 3D.
+- Урок в SCORM-тестах — `sa-3` (1,5 МБ), в тесте плашки — `reductor`
+  (2,4 МБ). ЭП20 — 29 МБ GLB, разбор которого блокирует поток отрисовки и
+  срывает таймауты; остальные уроки проверяются наличием своих
+  `lesson-<id>.html`, без открытия 3D.
 
 ## CI и git
 
