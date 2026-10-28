@@ -316,12 +316,21 @@ test.describe("учёт заданий", () => {
 });
 
 test.describe("автономный режим", () => {
-  test("вне LMS прогресс живёт в localStorage", async ({ page }) => {
+  test("в галерее вне LMS панели заданий нет: курса ещё нет", async ({
+    page,
+  }) => {
+    await page.goto("/index.html");
+    await expect(page.locator(".catalog")).toBeVisible();
+    await expect(page.locator(".course-panel")).toHaveCount(0);
+  });
+
+  test("вне LMS прогресс живёт в localStorage, панели заданий нет", async ({
+    page,
+  }) => {
     await page.goto(`/index.html?lesson=${LESSON}`);
     await expect(page.locator(".lesson")).toBeVisible();
-    await expect(page.locator(".course-panel__runtime")).toContainText(
-      "вне LMS",
-    );
+    // Панель показывает журнал LMS — вне LMS её нет и в уроке.
+    await expect(page.locator(".course-panel")).toHaveCount(0);
 
     await expect
       .poll(
@@ -388,15 +397,13 @@ test.describe("встраивание в сторонний курс", () => {
     await openScoInLms(page, `/lesson-${LESSON}.html?embed=1`);
     const app = page.frameLocator("#sco");
 
-    // Полный урок как обычно — шапка и панель заданий на месте.
+    // Шапка полного урока на месте, а панели заданий нет: она про журнал
+    // LMS, которого у встроенной страницы нет.
     await expect(app.locator(".lesson-title")).toContainText(LESSON_TITLE);
-    await expect(app.locator(".course-panel")).toBeVisible();
-    // А вот кнопки «К каталогу» нет: урок встроен в чужой курс, уводить
+    await expect(app.locator(".course-panel")).toHaveCount(0);
+    // Кнопки «К каталогу» тоже нет: урок встроен в чужой курс, уводить
     // обучающего из него нельзя.
     await expect(app.locator(".lesson-back")).toHaveCount(0);
-    await expect(app.locator(".course-panel__runtime")).toContainText(
-      "Встроенный режим",
-    );
 
     // Прогресс идёт в отдельный ключ localStorage и не смешивается ни
     // с SCORM-курсом, ни с локальным режимом разработки.
