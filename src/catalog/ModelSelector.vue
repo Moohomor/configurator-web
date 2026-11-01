@@ -43,7 +43,7 @@
             :aria-disabled="isLink(model) ? undefined : 'true'"
             :aria-label="
               isLink(model)
-                ? `Открыть урок «${model.name}»`
+                ? `Открыть модель «${model.name}»`
                 : model.name
             "
             :title="cardTitle(model)"
@@ -57,14 +57,6 @@
                 loading="lazy"
               />
               <div v-else class="card-preview-placeholder" aria-hidden="true">🚂</div>
-              <span
-                v-if="isCompleted(model.id)"
-                class="card-done"
-                title="Урок пройден"
-                aria-label="Урок пройден"
-              >
-                ✓
-              </span>
             </div>
             <div class="card-name">{{ model.name }}</div>
           </component>
@@ -173,7 +165,7 @@ function isLink(model: Model): boolean {
 function cardTitle(model: Model): string {
   if (model.available === false) return "Модель скоро появится";
   if (props.linksEnabled === false) return "Урок открывается из меню курса";
-  return `Открыть урок «${model.name}»`;
+  return `Открыть модель «${model.name}»`;
 }
 
 /**
@@ -226,8 +218,6 @@ function resolvePreviewUrl(previewPath: string): string {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
     Cantarell, sans-serif;
-  overflow-y: auto;
-  max-height: 100vh;
 }
 
 /* Tabs row */

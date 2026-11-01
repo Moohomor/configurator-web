@@ -197,6 +197,7 @@ body {
 
 .app--catalog > .catalog {
   overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .app--catalog > .course-panel {

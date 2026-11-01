@@ -4,13 +4,6 @@
   <div class="catalog">
     <header class="catalog-header">
       <h1 class="catalog-title">Подвижной состав</h1>
-      <p class="catalog-lead">
-        {{
-          linksEnabled
-            ? "Выберите модель — откроется отдельный урок, к нему можно вернуться по прямой ссылке из меню курса."
-            : "Обзор моделей курса. Каждый урок открывается из меню курса."
-        }}
-      </p>
     </header>
 
     <ModelSelector
@@ -61,7 +54,7 @@ function openLesson(model: Model): void {
 }
 
 .catalog-header {
-  padding: 40px 32px 20px;
+  padding: 40px 32px 30px;
   color: #1a1a1a;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
