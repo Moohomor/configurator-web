@@ -36,16 +36,12 @@
             :class="{
               'card--unavailable': model.available === false,
               'card--static': !isLink(model) && model.available !== false,
-              'card--completed': isCompleted(model.id),
+              'card--completed': showsCompleted(model.id),
             }"
             :href="isLink(model) ? lessonHref(model.id) : undefined"
             :tabindex="isLink(model) ? 0 : undefined"
             :aria-disabled="isLink(model) ? undefined : 'true'"
-            :aria-label="
-              isLink(model)
-                ? `Открыть модель «${model.name}»`
-                : model.name
-            "
+            :aria-label="isLink(model) ? openLabel(model) : model.name"
             :title="cardTitle(model)"
             @click="isLink(model) && onCardClick(model, $event)"
           >
@@ -57,6 +53,14 @@
                 loading="lazy"
               />
               <div v-else class="card-preview-placeholder" aria-hidden="true">🚂</div>
+              <span
+                v-if="showsCompleted(model.id)"
+                class="card-done"
+                title="Урок пройден"
+                aria-label="Урок пройден"
+              >
+                ✓
+              </span>
             </div>
             <div class="card-name">{{ model.name }}</div>
           </component>
@@ -85,6 +89,14 @@ interface Props {
    * остаётся — так галереей удобно пользоваться без LMS.
    */
   linksEnabled?: boolean;
+  /**
+   * Вставка в чужой курс или страницу.
+   *
+   * Курс-хром — галочки «урок пройден» и слово «урок» в подписи карточки —
+   * к чужому курсу не относится: там открывается модель, а не пункт меню.
+   * Внутри LMS и в автономном режиме всё остаётся как было.
+   */
+  embedded?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -165,7 +177,13 @@ function isLink(model: Model): boolean {
 function cardTitle(model: Model): string {
   if (model.available === false) return "Модель скоро появится";
   if (props.linksEnabled === false) return "Урок открывается из меню курса";
-  return `Открыть модель «${model.name}»`;
+  return openLabel(model);
+}
+
+/** Подпись ссылки: в курсе это урок из меню, во вставке — просто модель. */
+function openLabel(model: Model): string {
+  const what = props.embedded ? "модель" : "урок";
+  return `Открыть ${what} «${model.name}»`;
 }
 
 /**
@@ -192,7 +210,12 @@ function onCardClick(model: Model, event: MouseEvent) {
   emit("select", model);
 }
 
-function isCompleted(modelId: string): boolean {
+/**
+ * Галочка «урок пройден» — курс-хром: во вставке её нет, прогресс там не
+ * курсовой, а вспомогательный.
+ */
+function showsCompleted(modelId: string): boolean {
+  if (props.embedded) return false;
   return (props.completedIds ?? []).includes(modelId);
 }
 

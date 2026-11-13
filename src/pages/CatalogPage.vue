@@ -4,12 +4,14 @@
   <div class="catalog">
     <header class="catalog-header">
       <h1 class="catalog-title">Подвижной состав</h1>
+      <p class="catalog-lead">{{ lead }}</p>
     </header>
 
     <ModelSelector
       :models="models"
       :completed-ids="completedIds"
       :links-enabled="linksEnabled"
+      :embedded="embedded"
       @select="openLesson"
     />
   </div>
@@ -28,7 +30,21 @@ const props = defineProps<{
   tracker: LessonTracker;
   /** Внутри LMS уроки открываются из меню курса, карточки — не ссылки. */
   linksEnabled?: boolean;
+  /** Вставка в чужой курс: курс-хром (галочки, «меню курса») не нужен. */
+  embedded?: boolean;
 }>();
+
+/**
+ * Пояснение под заголовком. В курсе оно говорит главное: уроки открываются
+ * из меню курса. Во вставке курса нет — там коротко про модели, и
+ * упоминать «меню курса» нечего.
+ */
+const lead = computed(() => {
+  if (props.embedded) return "Выберите модель, чтобы открыть её в 3D.";
+  return props.linksEnabled
+    ? "Выберите модель — откроется отдельный урок. Вернуться в галерею можно кнопкой «Каталог моделей»."
+    : "Обзор моделей курса. Каждый урок открывается из меню курса.";
+});
 
 /** Уроки, по которым закрыты все обязательные задания. */
 const completedIds = computed(() =>
@@ -54,7 +70,7 @@ function openLesson(model: Model): void {
 }
 
 .catalog-header {
-  padding: 40px 32px 30px;
+  padding: 40px 32px 20px;
   color: #1a1a1a;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,

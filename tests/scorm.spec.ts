@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { fileURLToPath } from "node:url";
+import { readLessons } from "../scripts/catalog.mjs";
 import { cmiLog, cmiValues, openScoInLms, scoFrame } from "./fakeLms";
 
 /**
@@ -9,6 +11,16 @@ import { cmiLog, cmiValues, openScoInLms, scoFrame } from "./fakeLms";
  */
 const LESSON = "sa-3";
 const LESSON_TITLE = "СА-3";
+
+/**
+ * Список уроков читается из models.json — единственного источника каталога.
+ * Дублировать id здесь нельзя: новая модель должна попадать в проверку
+ * HTML-точек входа сама, без правки теста.
+ */
+const CATALOG_PATH = fileURLToPath(
+  new URL("../src/catalog/models.json", import.meta.url),
+);
+const LESSONS = readLessons(CATALOG_PATH);
 
 test.describe("архитектура SCO", () => {
   test("приложение не создаёт собственный iframe", async ({ page }) => {
@@ -61,17 +73,10 @@ test.describe("прямая ссылка на урок", () => {
   test("каждая модель с 3D имеет отдельную HTML-точку входа", async ({
     page,
   }) => {
-    const lessons = [
-      "loco-ep20",
-      "loco-tem23",
-      "metro-moscow-2020",
-      "ed4m_car",
-      "train-ivolga-3",
-      "reductor",
-      "sa-3",
-      "truck",
-    ];
-    for (const id of lessons) {
+    // Список — из models.json, а не из копии в тесте: добавили модель с
+    // `path` — проверка сразу требует для неё lesson- и embed-страницу.
+    expect(LESSONS.length).toBeGreaterThan(0);
+    for (const { id } of LESSONS) {
       const response = await page.request.get(`/lesson-${id}.html`);
       expect(response.status(), `lesson-${id}.html`).toBe(200);
       expect(await response.text()).toContain(`"id":"${id}"`);
@@ -342,9 +347,70 @@ test.describe("автономный режим", () => {
       )
       .toContain(LESSON);
   });
+
+  test("вне LMS закрытые задания дают галочку на карточке", async ({ page }) => {
+    await page.goto(`/index.html?lesson=${LESSON}`);
+    await expect(page.locator(".lesson")).toBeVisible();
+
+    const state = async () =>
+      page.evaluate(
+        () => localStorage.getItem("configurator:course-progress") ?? "",
+      );
+
+    // Обязательные задания: открытие урока (загрузка сцены) и выбор детали.
+    // Ждём именно отметки в прогрессе, а не появления DOM: галочка считается
+    // по ним.
+    await expect
+      .poll(state, { timeout: 60_000 })
+      .toContain("openedAt");
+    await page.locator(".part-info").first().click({ timeout: 60_000 });
+    await expect
+      .poll(state, { timeout: 60_000 })
+      .toContain("partAt");
+
+    await page.getByRole("link", { name: /Каталог моделей/ }).click();
+    await page.getByRole("tab", { name: "Детали" }).click();
+    const card = page.locator(`a.card[href*="lesson=${LESSON}"]`).first();
+    await expect(card.locator(".card-done")).toBeVisible();
+    // В автономном режиме карточка ведёт именно в урок: подпись не должна
+    // превратиться в «модель», как во вставке.
+    await expect(card).toHaveAttribute("aria-label", /Открыть урок/);
+  });
 });
 
 test.describe("встраивание в сторонний курс", () => {
+  test("встроенный каталог без курс-хрома: ни галочек, ни «меню курса»", async ({
+    page,
+  }) => {
+    // Прогресс вставки уже закрыт по sa-3. Без гейта трекер нарисовал бы
+    // на карточке галочку «урок пройден» — но курса здесь нет, и галочка
+    // врёт: в чужом курсе свой прогресс.
+    const progress = {
+      [LESSON]: {
+        openedAt: "2026-01-01T00:00:00.000Z",
+        partAt: "2026-01-01T00:00:01.000Z",
+        animationAt: null,
+        hasAnimations: false,
+      },
+    };
+    await page.addInitScript((state) => {
+      localStorage.setItem("configurator:embed-progress", JSON.stringify(state));
+    }, progress);
+
+    await openScoInLms(page, "/index.html?embed=1");
+    const app = page.frameLocator("#sco");
+
+    await app.getByRole("tab", { name: "Детали" }).click();
+    await expect(app.locator(".catalog")).toBeVisible();
+    await expect(app.locator(".card-done")).toHaveCount(0);
+    await expect(app.locator(".catalog-lead")).not.toContainText("меню курса");
+    // Чужого меню курса рядом нет: модель открывается из самой галереи.
+    const card = app.locator(`a.card[href*="lesson=${LESSON}"]`);
+    await expect(card).toHaveCount(1);
+    // И подпись говорит про модель, а не про урок из меню.
+    await expect(card).toHaveAttribute("aria-label", /Открыть модель/);
+  });
+
   test("embed-<id>.html не инициализирует чужую сессию LMS", async ({
     page,
   }) => {

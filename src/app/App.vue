@@ -4,7 +4,10 @@
 <template>
   <div
     class="app"
-    :class="[`app--${view}`, { 'app--no-panel': !panelVisible }]"
+    :class="[
+      `app--${view}`,
+      { 'app--no-panel': !panelVisible, 'app--embed': embedded },
+    ]"
   >
     <p v-if="loadError" class="app__message">{{ loadError }}</p>
     <p v-else-if="!tracker" class="app__message">Загрузка каталога моделей…</p>
@@ -22,6 +25,7 @@
         :models="models"
         :tracker="tracker"
         :links-enabled="linksEnabled"
+        :embedded="embedded"
       />
       <!--
         Панель заданий — про журнал LMS, поэтому живёт только внутри SCO.
@@ -101,6 +105,17 @@ const linksEnabled = computed(() => props.runtime.kind !== "scorm");
 
 /** Лёгкий вьюер для вставки в сторонний курс (embed-<id>.html). */
 const viewer = embedMode() === "viewer";
+
+/**
+ * Вставка в чужой курс или страницу (content-package, embed-<id>.html,
+ * `?embed=`). Режим уже выбран в `main.ts` по `embedMode()`; здесь только
+ * читаем его, чтобы признак не вычислялся в двух местах по-разному.
+ *
+ * Курс-хром — галочки «урок пройден», пояснения про меню курса — к чужому
+ * курсу не относится и только путает. Внутри SCO он нужен: там это и есть
+ * прогресс курса.
+ */
+const embedded = props.runtime.kind === "embed";
 
 /**
  * Панель заданий — про журнал LMS, поэтому только внутри SCO: в каталоге
@@ -197,6 +212,14 @@ body {
 
 .app--catalog > .catalog {
   overflow-y: auto;
+}
+
+/*
+ * Вставка живёт в iframe чужой страницы: полоса прокрутки галереи — второй
+ * скроллбар на экране. В курсе она остаётся: по ней видно, что моделей
+ * больше, чем помещается в окно.
+ */
+.app--embed.app--catalog > .catalog {
   scrollbar-width: none;
 }
 
