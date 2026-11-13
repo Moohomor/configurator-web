@@ -21,14 +21,15 @@ import { ref, onMounted, onBeforeUnmount, watch, reactive } from "vue";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type { ModelPart, TexturePack } from "../types/models";
+import type { ModelPart, PartNode, TexturePack } from "../types/models";
 import { clampAnimationTime, isPlayableClip } from "../animation/playback";
 
 interface Props {
   modelPath: string;
   selectedPart: ModelPart | null;
   selectedTexturePack: TexturePack | null;
-  visibleParts: Set<string>;
+  /** id скрытых узлов иерархии (Object3D.uuid). */
+  hiddenNodeIds: Set<string>;
   focusOnSelectedPart?: boolean;
   isAnimationPlaying?: boolean;
   animationTime?: number;
@@ -41,7 +42,7 @@ interface Props {
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  partsLoaded: [parts: ModelPart[]];
+  partsLoaded: [parts: ModelPart[], tree: PartNode[]];
   partClick: [part: ModelPart];
   animationsLoaded: [hasAnimations: boolean, duration: number];
   animationTimeUpdate: [time: number];
@@ -115,13 +116,16 @@ function onMouseMove(event: MouseEvent) {
   tooltipPos.y = event.clientY - rect.top + 15;
 
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(model.children, true);
+  // Скрытые узлы raycaster не пропускает сам — отфильтровываем вручную.
+  const intersects = raycaster
+    .intersectObjects(model.children, true)
+    .filter((hit) => isEffectivelyVisible(hit.object));
 
   if (intersects.length > 0 && intersects[0]) {
     const clickedMesh = intersects[0].object as THREE.Mesh;
     const part = parts.find((p) => p.mesh === clickedMesh);
 
-    if (part && part.visible) {
+    if (part) {
       hoveredPart.value = part;
       containerRef.value.style.cursor = 'pointer';
     } else {
@@ -159,9 +163,9 @@ watch(
 );
 
 watch(
-  () => props.visibleParts,
-  (visibleParts) => {
-    updatePartsVisibility(visibleParts);
+  () => props.hiddenNodeIds,
+  (hiddenNodeIds) => {
+    updatePartsVisibility(hiddenNodeIds);
   },
   { deep: true },
 );
@@ -425,6 +429,7 @@ function loadModel() {
           child.castShadow = true;
           child.receiveShadow = true;
           const part: ModelPart = {
+            id: child.uuid,
             name: child.name || "Unnamed",
             materialName: child.material?.name || "default",
             mesh: child,
@@ -476,7 +481,7 @@ function loadModel() {
         }
       }
 
-      emit("partsLoaded", parts);
+      emit("partsLoaded", parts, buildPartTree(model));
       console.log("Модель загружена успешно, деталей:", parts.length);
     },
     undefined,
@@ -525,7 +530,9 @@ function onCanvasClick(event: MouseEvent) {
 
   raycaster.setFromCamera(mouse, camera);
 
-  const intersects = raycaster.intersectObjects(model.children, true);
+  const intersects = raycaster
+    .intersectObjects(model.children, true)
+    .filter((hit) => isEffectivelyVisible(hit.object));
 
   if (intersects.length > 0 && intersects[0]) {
     const clickedMesh = intersects[0].object as THREE.Mesh;
@@ -759,13 +766,31 @@ function applyTexturePack(pack: TexturePack) {
   });
 }
 
-function updatePartsVisibility(visibleParts: Set<string>) {
+/** Узел виден, только если виден он сам и все его предки. */
+function isEffectivelyVisible(object: THREE.Object3D | null): boolean {
+  for (let o = object; o; o = o.parent) {
+    if (!o.visible) return false;
+  }
+  return true;
+}
+
+/** Иерархия модели один в один с файлом: группы, кости и меши. */
+function buildPartTree(root: THREE.Object3D): PartNode[] {
+  return root.children.map((child) => ({
+    id: child.uuid,
+    name: child.name || child.type,
+    isMesh: child instanceof THREE.Mesh,
+    children: buildPartTree(child),
+  }));
+}
+
+function updatePartsVisibility(hiddenNodeIds: Set<string>) {
+  // Скрытие узла прячет всё его поддерево (так работает Object3D.visible).
+  model?.traverse((object) => {
+    object.visible = !hiddenNodeIds.has(object.uuid);
+  });
   parts.forEach((part) => {
-    if (part.mesh) {
-      const shouldBeVisible = visibleParts.has(part.name);
-      part.mesh.visible = shouldBeVisible;
-      part.visible = shouldBeVisible;
-    }
+    part.visible = isEffectivelyVisible(part.mesh ?? null);
   });
 }
 </script>

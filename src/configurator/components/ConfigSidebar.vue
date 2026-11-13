@@ -72,41 +72,14 @@
         </div>
       </div>
 
-      <div class="parts-list">
-        <div
-          v-for="part in parts"
-          :key="part.name"
-          class="part-item"
-          :class="{
-            selected: selectedPart?.name === part.name,
-            hidden: part.visible === false,
-          }"
-        >
-          <div
-            class="part-info"
-            role="button"
-            tabindex="0"
-            :aria-label="`Выбрать деталь ${part.name}`"
-            @click="$emit('selectPart', part)"
-            @keydown.enter.prevent="$emit('selectPart', part)"
-            @keydown.space.prevent="$emit('selectPart', part)"
-          >
-            <span class="part-name">{{ part.name }}</span>
-            <span class="part-material">{{ part.materialName }}</span>
-          </div>
-
-          <BaseButton
-            :variant="part.visible === false ? 'primary' : 'danger'"
-            small
-            @click.stop="$emit('toggleVisibility', part)"
-            :title="
-              part.visible === false ? 'Показать деталь' : 'Скрыть деталь'
-            "
-          >
-            {{ part.visible === false ? "Показать" : "Скрыть" }}
-          </BaseButton>
-        </div>
-      </div>
+      <PartsTree
+        :tree="partTree"
+        :parts="parts"
+        :selected-part="selectedPart"
+        :hidden-node-ids="hiddenNodeIds"
+        @select-part="$emit('selectPart', $event)"
+        @toggle-node-visibility="$emit('toggleNodeVisibility', $event)"
+      />
     </div>
     <div class="sidebar-section" v-if="lightPosition">
       <div class="section-header">
@@ -172,11 +145,15 @@
 
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount } from "vue";
-import type { ModelPart, TexturePack } from "../types/models";
+import type { ModelPart, PartNode, TexturePack } from "../types/models";
 import BaseButton from "./BaseButton.vue";
+import PartsTree from "./PartsTree.vue";
 
 interface Props {
   parts: ModelPart[];
+  /** Иерархия модели для дерева деталей. */
+  partTree: PartNode[];
+  hiddenNodeIds: Set<string>;
   texturePacks?: TexturePack[];
   selectedPart: ModelPart | null;
   selectedTexturePack: TexturePack | null;
@@ -200,7 +177,7 @@ const hasHiddenParts = computed(() => {
 const emit = defineEmits<{
   selectPart: [part: ModelPart];
   selectTexturePack: [pack: TexturePack];
-  toggleVisibility: [part: ModelPart];
+  toggleNodeVisibility: [id: string];
   hideAll: [];
   showAll: [];
   back: [];
@@ -357,67 +334,15 @@ function setPreset(key: string) {
   border: 2px solid #ddd;
 }
 
-.parts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
 
-.part-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  transition: all 0.2s;
-  gap: 8px;
-}
 
-.part-item:hover {
-  background: #f9f9f9;
-  border-color: #bbb;
-}
 
-.part-item.selected {
-  border-color: #4a90e2;
-  background: #f0f7ff;
-}
 
-.part-item.hidden {
-  opacity: 0.5;
-}
 
-.part-item.hidden:hover {
-  opacity: 0.7;
-}
 
-.part-info:focus-visible {
-  outline: 3px solid #4a90e2;
-  outline-offset: 2px;
-  border-radius: 4px;
-}
 
-.part-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  cursor: pointer;
-}
 
-.part-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-}
 
-.part-material {
-  font-size: 12px;
-  color: #888;
-}
 
 .visibility-toggle {
   flex-shrink: 0;
@@ -734,21 +659,5 @@ function setPreset(key: string) {
     font-size: 15px;
   }
 
-  .part-item {
-    padding: 14px 12px;
-    gap: 10px;
-  }
-
-  .part-name {
-    font-size: 15px;
-  }
-
-  .part-material {
-    font-size: 13px;
-  }
-
-  .parts-list {
-    max-height: none;
-  }
 }
 </style>

@@ -33,6 +33,8 @@
       >
         <ConfigSidebar
           :parts="parts"
+          :part-tree="partTree"
+          :hidden-node-ids="hiddenNodeIds"
           :texture-packs="model.texturePacks"
           :selected-part="selectedPart"
           :selected-texture-pack="selectedTexturePack"
@@ -41,7 +43,7 @@
           :title="model.name"
           @select-part="selectPart"
           @select-texture-pack="selectTexturePack"
-          @toggle-visibility="togglePartVisibility"
+          @toggle-node-visibility="toggleNodeVisibility"
           @hide-all="() => setAllVisible(false)"
           @show-all="() => setAllVisible(true)"
           @reset="resetConfiguration"
@@ -126,7 +128,7 @@
           :model-path="model.path!"
           :selected-part="selectedPart"
           :selected-texture-pack="selectedTexturePack"
-          :visible-parts="visiblePartsSet"
+          :hidden-node-ids="hiddenNodeIds"
           :focus-on-selected-part="view.focusOnSelectedPart"
           :is-animation-playing="animation.isPlaying"
           :animation-time="animation.seekTime"
@@ -289,7 +291,8 @@ const {
   parts,
   selectedPart,
   selectedTexturePack,
-  visiblePartsSet,
+  partTree,
+  hiddenNodeIds,
   animation,
   view,
   light,
@@ -301,7 +304,7 @@ const {
   onAnimationFinished,
   selectPart,
   selectTexturePack,
-  togglePartVisibility,
+  toggleNodeVisibility,
   setAllVisible,
   updateLightPosition,
   playAnimation,

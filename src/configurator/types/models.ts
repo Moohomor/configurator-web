@@ -28,12 +28,26 @@ export interface TexturePack {
 }
 
 export interface ModelPart {
+  /** Уникальный id узла сцены (Object3D.uuid): имена деталей могут повторяться. */
+  id: string;
   name: string;
   materialName: string;
   mesh?: any;
   description?: string;
   metadata?: Record<string, any>;
   visible?: boolean;
+}
+
+/**
+ * Узел иерархии модели — как в Outliner Blender: показываем все узлы файла
+ * (группы, кости, меши) без фильтрации. Деталь (меш) связана с узлом по id.
+ */
+export interface PartNode {
+  id: string;
+  name: string;
+  /** Меш — его можно выбрать на сцене; остальное — группы/кости/пустышки. */
+  isMesh: boolean;
+  children: PartNode[];
 }
 
 export interface ConfiguratorState {
